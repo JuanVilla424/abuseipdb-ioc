@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     ABUSEIPDB_DAILY_LIMIT: int = 10  # Max AbuseIPDB API calls per day (auto-saves to Redis)
 
     # IOC Scoring Weights
-    LOCAL_CONFIDENCE_WEIGHT: float = 0.7
-    EXTERNAL_CONFIDENCE_WEIGHT: float = 0.3
+    LOCAL_CONFIDENCE_WEIGHT: float = 0.8  # 80% weight for local detections (your attack reality)
+    EXTERNAL_CONFIDENCE_WEIGHT: float = 0.2  # 20% weight for external sources (global context)
     LOCAL_CONFIDENCE_BOOST: int = 10
 
     # API Configuration

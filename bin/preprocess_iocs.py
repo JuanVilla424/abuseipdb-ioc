@@ -83,12 +83,24 @@ class IOCPreProcessor:
                 )
 
                 if blacklist_response.get("data"):
+                    # Create a lookup for local IPs for faster checking
+                    local_ips = {ioc["ip_address"]: ioc for ioc in local_iocs}
+
                     for item in blacklist_response["data"]:
-                        # Avoid duplicates with local data
                         ip_address = item.get("ipAddress")
-                        if not any(
-                            local_ioc["ip_address"] == ip_address for local_ioc in local_iocs
-                        ):
+
+                        if ip_address in local_ips:
+                            # IP appears in both sources - enhance the local IOC with AbuseIPDB data
+                            local_ioc = local_ips[ip_address]
+                            local_ioc["dual_source"] = True
+                            local_ioc["abuseipdb_data"] = {
+                                "confidence": item.get("abuseConfidenceScore", 50),
+                                "categories": ["abuseipdb-blacklist"],
+                                "source": "abuseipdb",
+                            }
+                            logger.debug(f"Enhanced local IOC {ip_address} with AbuseIPDB data")
+                        else:
+                            # IP only in AbuseIPDB - add as external source
                             abuseipdb_iocs.append(
                                 {
                                     "ip_address": ip_address,
@@ -98,10 +110,16 @@ class IOCPreProcessor:
                                     "categories": ["abuseipdb-blacklist"],
                                     "created_at": datetime.now(timezone.utc),
                                     "source": "abuseipdb",
+                                    "dual_source": False,
                                 }
                             )
+
                     stats["abuseipdb_iocs"] = len(abuseipdb_iocs)
+                    stats["dual_source_iocs"] = len(
+                        [ioc for ioc in local_iocs if ioc.get("dual_source")]
+                    )
                     logger.info(f"Found {stats['abuseipdb_iocs']} unique AbuseIPDB blacklist IOCs")
+                    logger.info(f"Found {stats['dual_source_iocs']} IOCs present in both sources")
                 else:
                     logger.info("No AbuseIPDB blacklist data available (likely rate limited)")
             except Exception as e:
