@@ -7,12 +7,14 @@ the results for fast TAXII2 endpoint responses.
 
 import asyncio
 import logging
+import os
+import socket
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from src.db.database import get_async_session
+from src.db.database import AsyncSessionLocal
 from src.db.models import ReportedIPs, AbuseIPDBCache
 from src.core.correlation import IOCCorrelationEngine
 from src.enrichment.abuseipdb_client import AbuseIPDBClient
@@ -62,16 +64,41 @@ class IOCProcessor:
         # Set processing flag to prevent concurrent execution
         self.processing = True
         start_time = datetime.now(timezone.utc)
+        lock_acquired = False
 
         try:
-            async with get_async_session() as db:
-                logger.info(f"Starting IOC processing cycle at {start_time.isoformat()}")
-
+            async with AsyncSessionLocal() as db:
                 # Get Redis cache
                 redis_cache = await get_redis_cache()
                 if not redis_cache:
                     logger.error("Redis cache not available")
                     return
+
+                # Try to acquire distributed lock
+                lock_key = "ioc_processor_lock"
+                lock_ttl = 900  # 15 minutes TTL for the lock
+
+                # Check if lock exists
+                existing_lock = await redis_cache._redis.get(lock_key)
+                if existing_lock:
+                    logger.warning(
+                        f"Another IOC processor is running (lock held by: {existing_lock}). Skipping this cycle."
+                    )
+                    return
+
+                # Acquire lock with instance identifier
+                instance_id = f"{socket.gethostname()}-{os.getpid()}"
+                lock_acquired = await redis_cache._redis.set(
+                    lock_key, instance_id, nx=True, ex=lock_ttl
+                )
+
+                if not lock_acquired:
+                    logger.warning("Could not acquire lock, another processor may be running")
+                    return
+
+                logger.info(
+                    f"Starting IOC processing cycle at {start_time.isoformat()} (lock acquired by {instance_id})"
+                )
 
                 # 1. Get all local IOCs
                 local_iocs = await self._get_local_iocs(db)
@@ -145,6 +172,14 @@ class IOCProcessor:
         finally:
             # Always reset processing flag
             self.processing = False
+
+            # Release Redis lock if acquired
+            if lock_acquired and redis_cache and redis_cache._redis:
+                try:
+                    await redis_cache._redis.delete(lock_key)
+                    logger.info("Released IOC processor lock")
+                except Exception as e:
+                    logger.error(f"Error releasing lock: {e}")
 
     async def _get_local_iocs(self, db: AsyncSession) -> List[Dict[str, Any]]:
         """Get IOCs from local database."""
