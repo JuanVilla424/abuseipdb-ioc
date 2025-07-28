@@ -87,6 +87,13 @@ class STIXExporter:
         if ioc_data.get("valid_until"):
             valid_until_date = parse_date(ioc_data["valid_until"])
 
+        # Calculate weighted confidence score
+        confidence_score = ioc_data.get("final_confidence_score", ioc_data.get("confidence", 75))
+
+        # Determine provider based on source
+        source = ioc_data.get("source", "local")
+        provider = "AbuseIPDB" if source == "abuseipdb" else "Local Detection"
+
         # Create Elasticsearch-compatible STIX indicator
         indicator = {
             "type": "indicator",
@@ -99,7 +106,9 @@ class STIXExporter:
             "pattern_version": "2.1",
             "valid_from": valid_from_date.isoformat(),
             "labels": labels,
-            "confidence": ioc_data.get("confidence", 75),
+            "confidence": int(
+                confidence_score
+            ),  # Use the weighted confidence score calculated above
             "lang": "en",
             "revoked": False,
         }
@@ -122,10 +131,13 @@ class STIXExporter:
 
         # Add custom properties for Elasticsearch
         custom_properties = {
-            "x_elastic_provider": ioc_data.get("provider", "Local Detection"),
-            "x_elastic_confidence_score": ioc_data.get("confidence", 75),
+            "x_elastic_provider": ioc_data.get("provider", provider),
+            "x_elastic_confidence_score": confidence_score,
             "x_elastic_threat_types": ioc_data.get("threat_types", []),
             "x_elastic_freshness_score": ioc_data.get("freshness_score", 1.0),
+            "x_elastic_dual_source": ioc_data.get("dual_source", False),
+            "x_elastic_local_confidence": ioc_data.get("local_confidence", 0),
+            "x_elastic_external_confidence": ioc_data.get("external_confidence", 0),
         }
 
         # Add geolocation data

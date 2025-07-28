@@ -145,6 +145,53 @@ class RedisIOCCache:
 
         return None
 
+    async def get(self, key: str) -> Optional[Any]:
+        """
+        Get generic data from Redis cache.
+
+        Args:
+            key: Cache key name
+
+        Returns:
+            Cached data or None if not found
+        """
+        if not self._redis:
+            return None
+
+        try:
+            cached_data = await self._redis.get(key)
+            if cached_data:
+                return json.loads(cached_data)
+        except Exception as e:
+            logger.error(f"Redis get error for key {key}: {e}")
+
+        return None
+
+    async def set(self, key: str, data: Any, ttl: int = 3600) -> bool:
+        """
+        Store generic data in Redis cache.
+
+        Args:
+            key: Cache key name
+            data: Data to store
+            ttl: Time to live in seconds
+
+        Returns:
+            bool: True if stored successfully, False if error
+        """
+        if not self._redis:
+            logger.warning("Redis not connected, cannot cache data")
+            return False
+
+        try:
+            await self._redis.setex(key, ttl, json.dumps(data, cls=DateTimeEncoder))
+            logger.debug(f"Cached data in Redis key {key} with {ttl}s TTL")
+            return True
+
+        except Exception as e:
+            logger.error(f"Redis set error for key {key}: {e}")
+            return False
+
     async def clear_cache(self, key: str = "blacklist_iocs") -> bool:
         """
         Clear specific cache key.

@@ -139,7 +139,7 @@ async def get_collection_objects(
 
     Returns STIX objects from the specified collection.
     """
-    if collection_id not in ["ioc-indicators", "high-confidence-iocs"]:
+    if collection_id not in ["ioc-indicators", "high-confidence-iocs", "abuseipdb-iocs"]:
         raise HTTPException(status_code=404, detail="Collection not found")
 
     # Set minimum confidence based on collection
