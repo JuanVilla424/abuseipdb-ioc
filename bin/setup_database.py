@@ -11,11 +11,13 @@ import sys
 import os
 
 # Add src to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+src_path = os.path.join(project_root, "src")
+sys.path.insert(0, src_path)
 
 from sqlalchemy.ext.asyncio import create_async_engine
-from src.core.config import settings
-from src.db.models import Base
+from core.config import settings
+from db.models import Base
 
 
 async def init_db():
