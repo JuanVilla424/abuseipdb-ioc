@@ -1,4 +1,4 @@
-# 🛡️ IOC Management System
+# 🛡️ AbuseIPDB IOC Management System
 
 <div align="center">
 
@@ -7,15 +7,17 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688?style=for-the-badge&logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-12+-336791?style=for-the-badge&logo=postgresql&logoColor=white)
 ![STIX](https://img.shields.io/badge/STIX-2.1-FF6B35?style=for-the-badge&logo=mitre&logoColor=white)
+![TAXII](https://img.shields.io/badge/TAXII-2.1-007ACC?style=for-the-badge&logo=security&logoColor=white)
 
 ![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?style=flat-square&logo=docker&logoColor=white)
-![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=flat-square&logo=apache&logoColor=white)
+![License](https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square&logo=gnu&logoColor=white)
 ![Security](https://img.shields.io/badge/Security-First-success?style=flat-square&logo=shield&logoColor=white)
-![API](https://img.shields.io/badge/REST-API-orange?style=flat-square&logo=swagger&logoColor=white)
+![Elasticsearch](https://img.shields.io/badge/Elasticsearch-CTI-yellow?style=flat-square&logo=elasticsearch&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-Cache-DC382D?style=flat-square&logo=redis&logoColor=white)
 
-**A comprehensive threat intelligence platform that leverages existing PostgreSQL threat data and enriches it with AbuseIPDB intelligence, exposing standardized IOCs via REST API for SIEM integration.**
+**A comprehensive TAXII 2.1 server and STIX 2.1 threat intelligence platform with Elasticsearch Custom Threat Intelligence integration, advanced geolocation enrichment from multiple sources, and intelligent IOC preprocessing. Combines local PostgreSQL threat data with AbuseIPDB blacklist (confidence ≥50) into industry-standard intelligence feeds.**
 
-[🚀 Quick Start](#-quick-start) • [🔧 API Reference](#-api-reference) • [🐳 Docker](#-docker-deployment) • [🛠️ Development](#-development)
+[🚀 Quick Start](#-quick-start) • [🔧 TAXII Integration](#-taxii-21-server) • [⚡ Elasticsearch CTI](#-elasticsearch-integration) • [🌍 Geolocation](#-geolocation-enrichment)
 
 </div>
 
@@ -24,9 +26,14 @@
 ## 📋 Table of Contents
 
 - [✨ Features](#-features)
+- [🏗️ Architecture](#-architecture)
 - [⚡ Quick Start](#-quick-start)
+- [🔧 TAXII 2.1 Server](#-taxii-21-server)
+- [⚡ Elasticsearch Integration](#-elasticsearch-integration)
+- [🌍 Geolocation Enrichment](#-geolocation-enrichment)
+- [📊 IOC Preprocessing](#-ioc-preprocessing)
 - [🐳 Docker Deployment](#-docker-deployment)
-- [🔧 API Reference](#-api-reference)
+- [⚙️ Configuration](#-configuration)
 - [📊 Usage Examples](#-usage-examples)
 - [📈 Monitoring](#-monitoring)
 - [🔒 Security](#-security)
@@ -40,26 +47,36 @@
 ### 🎯 Core Capabilities
 
 - **🔍 Non-invasive Integration** - Read-only access to existing `reported_ips` table
-- **🌐 AbuseIPDB Enrichment**-Intelligent caching with rate limiting (1,000+ requests/day)
+- **🌐 AbuseIPDB Enrichment** - Intelligent caching with daily API limit control
 - **⚖️ Weighted Confidence Scoring** - Prioritizes local detections (70%) over external sources (30%)
-- **📊 STIX 2.x Compliance**-Full standardized threat intelligence format support
-- **🔄 Multiple Export Formats** - JSON, STIX bundles, CSV, plain text
-- **⚡ High Performance** - Async FastAPI with connection pooling
+- **📊 STIX 2.1 Compliance** - Full standardized threat intelligence format support
+- **🔧 TAXII 2.1 Server** - Industry-standard threat intelligence sharing protocol
+- **⚡ High Performance** - Async FastAPI with connection pooling and Redis caching
 
-### 🛡️ Security & Intelligence
+### 🛡️ Advanced Intelligence Features
 
-- **🎯 Intelligence Prioritization**-Local detections as primary source
-- **🔄 Real-time Correlation**-Live fusion of local and external threat data
+- **🌍 Multi-Source Geolocation** - IP-API, IPWhois, GeoJS with intelligent fallback
+- **⚡ Elasticsearch CTI Integration** - Direct Custom Threat Intelligence support
+- **📊 IOC Preprocessing** - Background enrichment and caching for instant responses
+- **🔄 Real-time Correlation** - Live fusion of local and external threat data
 - **📈 Confidence Boosting** - Local detections ≥75% confidence get minimum 85% final score
-- **🔐 Secure API** - Key-based authentication with rate limiting
-- **📝 Comprehensive Logging**-Professional audit trails with file rotation
+- **🎯 Intelligence Prioritization** - Local detections as primary source
 
-### 🚀 Integration Ready
+### 🚀 Enterprise Integration
 
-- **🔌 SIEM Compatible** - Direct integration with Elastic, Splunk, QRadar
+- **⚡ Elasticsearch Ready** - Native CTI format with geo_point mapping for maps
+- **🔧 TAXII 2.1 Collections** - Standard and high-confidence IOC collections
+- **💾 Redis Caching** - 24-hour TTL with preprocessing for performance
+- **🌍 Geographic Enrichment** - Latitude/longitude coordinates in multiple ECS formats
+- **🔐 Rate Limiting** - Respectful API usage with 1-second delays
+- **📝 Comprehensive Logging** - Professional audit trails with structured JSON
+
+### 🔧 Operational Excellence
+
 - **🐳 Production Ready** - Docker containerization with health checks
-- **📊 Monitoring Built-in** - Metrics, health endpoints, and alerting
-- **🔧 CLI Tools** - Management and maintenance utilities
+- **📊 Monitoring Built-in** - Metrics, health endpoints, and processing statistics
+- **🔧 CLI Tools** - Management, preprocessing, and maintenance utilities
+- **⚙️ Flexible Configuration** - Environment-based with single daily limit control
 
 ---
 
@@ -69,30 +86,45 @@
 
 ```mermaid
 graph TB
-    A[🗄️ Existing reported_ips<br/>READ-ONLY] --> B[🔄 IOC Correlator]
-    C[🌐 AbuseIPDB API] --> D[💾 Cache Layer]
-    D --> B
-    B --> E[⚖️ Confidence Scoring]
-    E --> F[📊 STIX Generator]
-    E --> G[🔌 REST API]
-    F --> H[📤 Multiple Formats]
-    G --> I[🛡️ SIEM Integration]
+    A[🗄️ PostgreSQL reported_ips<br/>READ-ONLY] --> B[📊 IOC Preprocessor]
+    C[🌐 AbuseIPDB API<br/>Daily Limit Control] --> B
+    D[🌍 Multi-Geo Services<br/>IP-API, IPWhois, GeoJS] --> B
+    B --> E[💾 Redis Cache<br/>24h TTL]
+    E --> F[🔧 TAXII 2.1 Server]
+    E --> G[⚡ Elasticsearch CTI]
+    F --> H[📊 STIX 2.1 Bundles]
+    G --> I[🗺️ ECS Geo Mapping]
+    H --> J[🛡️ SIEM Integration]
+    I --> J
 
     style A fill:#e1f5fe
     style C fill:#fff3e0
-    style E fill:#e8f5e8
-    style I fill:#fce4ec
+    style D fill:#e8f5e8
+    style F fill:#fce4ec
+    style G fill:#fff9c4
 ```
 
 </div>
 
-### 🎯 Intelligence Prioritization Strategy
+### 🎯 Intelligence Processing Pipeline
 
-| Source                  | Weight   | Confidence Boost | Use Case                    |
-| ----------------------- | -------- | ---------------- | --------------------------- |
-| 🏠 **Local Detections** | 70%      | +10% (min 85%)   | Primary threat intelligence |
-| 🌐 **AbuseIPDB**        | 30%      | Validation only  | External enrichment         |
-| 🔄 **Combined**         | Weighted | Smart fusion     | Enhanced IOC quality        |
+| Stage                      | Component          | Processing                                |
+| -------------------------- | ------------------ | ----------------------------------------- |
+| 🔍 **Data Ingestion**      | PostgreSQL Reader  | Fetches ALL IOCs from reported_ips table  |
+| 🌐 **External Enrichment** | AbuseIPDB Client   | Respects daily limits, caches responses   |
+| 🌍 **Geolocation**         | Multi-Source Geo   | 3 fallback services with 1s delays        |
+| ⚖️ **Correlation**         | IOC Engine         | Weighted scoring: Local 70%, External 30% |
+| 💾 **Preprocessing**       | Background Worker  | Enriches all IOCs, caches for 24h         |
+| 🔧 **TAXII Distribution**  | Standards Server   | STIX 2.1 bundles with proper envelopes    |
+| ⚡ **Elasticsearch CTI**   | Native Integration | ECS-compatible geo_point for mapping      |
+
+### 🌍 Geolocation Enrichment Strategy
+
+| Format                      | Purpose            | Example                       |
+| --------------------------- | ------------------ | ----------------------------- |
+| `x_elastic_geo_coordinates` | STIX custom format | `{"lat": 52.37, "lon": 4.90}` |
+| `x_elastic_geo_location`    | ECS object format  | `{"lat": 52.37, "lon": 4.90}` |
+| `x_elastic_geo_point`       | ECS array format   | `[4.90, 52.37]` (lon, lat)    |
 
 ---
 
@@ -126,22 +158,168 @@ cp .env.example .env
 # 5️⃣ Initialize database (creates new tables only)
 python bin/setup_database.py
 
-# 6️⃣ Start application
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+# 6️⃣ Start Redis (for caching)
+redis-server --daemonize yes
+
+# 7️⃣ Run IOC preprocessing (optional but recommended)
+python -m bin.preprocess_iocs
+
+# 8️⃣ Start application
+uvicorn src.main:app --host 0.0.0.0 --port 8000
 ```
 
 ### ✅ Verify Installation
 
 ```bash
 # 🏥 Health check
-curl http://localhost:8000/api/v1/health
+curl http://localhost:8000/health
 
-# 📊 View statistics
-curl http://localhost:8000/api/v1/stats
+# 📊 Test TAXII 2.1 discovery
+curl http://localhost:8000/taxii2
 
-# 🔍 Test IOC retrieval
-curl http://localhost:8000/api/v1/indicators?limit=5
+# 🔍 Test IOC retrieval via TAXII
+curl http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects | jq '.data.objects | length'
+
+# ⚡ Test Elasticsearch CTI endpoint
+curl http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects
 ```
+
+---
+
+## 🔧 TAXII 2.1 Server
+
+The system provides a complete TAXII 2.1 server implementation for standardized threat intelligence sharing.
+
+### 📋 TAXII Endpoints
+
+| Endpoint                                 | Method | Description               |
+| ---------------------------------------- | ------ | ------------------------- |
+| `/taxii2`                                | GET    | 🔍 Discovery endpoint     |
+| `/taxii2/iocs`                           | GET    | 📊 Root information       |
+| `/taxii2/iocs/collections`               | GET    | 📋 Available collections  |
+| `/taxii2/iocs/collections/{id}`          | GET    | 🔍 Collection information |
+| `/taxii2/iocs/collections/{id}/objects`  | GET    | 📤 STIX objects           |
+| `/taxii2/iocs/collections/{id}/manifest` | GET    | 📋 Object manifest        |
+
+### 🎯 Available Collections
+
+1. **`ioc-indicators`** - All IOC indicators from your database
+2. **`high-confidence-iocs`** - IOCs with ≥80% confidence only
+
+### 🔧 TAXII Usage Examples
+
+```bash
+# 🔍 Discover available collections
+curl http://localhost:8000/taxii2/iocs/collections
+
+# 📊 Get all IOCs in STIX format
+curl "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects"
+
+# 🎯 Get high-confidence IOCs only
+curl "http://localhost:8000/taxii2/iocs/collections/high-confidence-iocs/objects"
+
+# 📋 Get collection manifest
+curl "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/manifest"
+```
+
+---
+
+## ⚡ Elasticsearch Integration
+
+Perfect integration with Elasticsearch Custom Threat Intelligence.
+
+### 🎯 Configuration for Elasticsearch
+
+Use this URL in your Elasticsearch Custom Threat Intelligence configuration:
+
+```
+http://your-server:8000/taxii2/iocs/collections/ioc-indicators/objects
+```
+
+### 📊 Elasticsearch CTI Features
+
+- ✅ **Standard TAXII 2.1 format** with proper envelope structure
+- ✅ **ECS-compatible geo_point** fields for mapping visualization
+- ✅ **Multiple geolocation formats** for maximum compatibility
+- ✅ **All IOCs returned** (no artificial limits)
+- ✅ **Pre-processed caching** for instant responses
+- ✅ **Industry-standard STIX 2.1** indicator format
+
+### 🗺️ Geographic Data for Maps
+
+Each IOC includes multiple geolocation formats:
+
+```json
+{
+  "x_elastic_geo_coordinates": { "lat": 52.37, "lon": 4.9 },
+  "x_elastic_geo_location": { "lat": 52.37, "lon": 4.9 },
+  "x_elastic_geo_point": [4.9, 52.37]
+}
+```
+
+---
+
+## 🌍 Geolocation Enrichment
+
+Advanced multi-source geolocation with intelligent fallback.
+
+### 🔄 Geolocation Providers
+
+1. **IP-API.com** (Primary) - Fast and reliable
+2. **IPWhois.app** (Fallback) - Alternative source
+3. **GeoJS.io** (Backup) - Final fallback
+
+### ⚡ Rate Limiting & Performance
+
+- **1-second delays** between requests to respect API limits
+- **Intelligent caching** prevents duplicate lookups
+- **Batch processing** for memory efficiency
+- **Automatic fallback** if primary service fails
+
+### 🎯 Geolocation Features
+
+```bash
+# 🔍 View geolocation-enriched IOCs
+curl "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" | \
+  jq '.data.objects[0] | {ip: .pattern, geo: .x_elastic_geo_location}'
+```
+
+---
+
+## 📊 IOC Preprocessing
+
+Background IOC enrichment system for optimal performance.
+
+### 🚀 Preprocessing Script
+
+```bash
+# 📊 Run manual preprocessing
+python -m bin.preprocess_iocs
+
+# 📋 Example output:
+# 2025-07-28 11:39:25 - INFO - Total IOCs: 20
+# 2025-07-28 11:39:25 - INFO - Processed: 20
+# 2025-07-28 11:39:25 - INFO - Geo-enriched: 18 (90%)
+# 2025-07-28 11:39:25 - INFO - Cached: 20
+# 2025-07-28 11:39:25 - INFO - Duration: 34.05 seconds
+```
+
+### ⏰ Automated Processing
+
+Add to crontab for daily processing:
+
+```bash
+# Daily preprocessing at 2 AM
+0 2 * * * cd /your/project/path && python -m bin.preprocess_iocs
+```
+
+### 📊 Preprocessing Benefits
+
+- **🚀 Instant TAXII responses** from Redis cache
+- **🌍 Pre-enriched geolocation** for all IOCs
+- **📈 90%+ geolocation success** rate
+- **⚡ 24-hour caching** with automatic refresh
+- **📊 Processing statistics** tracking
 
 ---
 
@@ -225,90 +403,91 @@ services:
 
 ## 📊 Usage Examples
 
-### 🎯 Basic Operations
+### 🎯 TAXII 2.1 Operations
 
 <details>
-<summary>🔍 <strong>Get High-Confidence IOCs</strong></summary>
+<summary>🔍 <strong>Get All IOCs via TAXII</strong></summary>
 
 ```bash
-# 📊 Get IOCs with confidence ≥ 90%
-curl -X GET "http://localhost:8000/api/v1/indicators?min_confidence=90&limit=100" \
-  -H "Accept: application/json" | jq '.'
+# 📊 Get all IOCs in STIX 2.1 format
+curl -X GET "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" \
+  -H "Accept: application/json" | jq '.data.objects | length'
 
-# 📋 Response format
+# 📋 Response structure
 {
-  "indicators": [
-    {
-      "ip_address": "192.168.1.100",
-      "confidence": 95,
-      "local_confidence": 85,
-      "abuseipdb_confidence": 100,
-      "reported_at": "2025-07-27T10:30:00Z",
-      "categories": ["malware", "botnet"],
-      "country_code": "CN",
-      "enriched": true
-    }
-  ],
-  "total": 150,
-  "page": 1
-}
-```
-
-</details>
-
-<details>
-<summary>📊 <strong>Export as STIX Bundle</strong></summary>
-
-```bash
-# 📊 Export high-confidence IOCs as STIX 2.x
-curl -X GET "http://localhost:8000/api/v1/indicators/stix?min_confidence=85" \
-  -H "Accept: application/json" \
-  -o threat_intel.json
-
-# 📋 STIX Bundle format
-{
-  "type": "bundle",
-  "id": "bundle--f47ac10b-58cc-4372-a567-0e02b2c3d479",
-  "objects": [
-    {
-      "type": "indicator",
-      "id": "indicator--f47ac10b-58cc-4372-a567-0e02b2c3d480",
-      "created": "2025-07-27T10:30:00.000Z",
-      "pattern": "[ipv4-addr:value = '192.168.1.100']",
-      "labels": ["malicious-activity"],
-      "confidence": 95,
-      "custom_properties": {
-        "x_local_detection": true,
-        "x_local_confidence": 85,
-        "x_abuseipdb_confidence": 100
+  "more": false,
+  "data": {
+    "type": "bundle",
+    "id": "bundle--20250728163050",
+    "spec_version": "2.1",
+    "objects": [
+      {
+        "type": "indicator",
+        "id": "indicator--192-203-230-10",
+        "pattern": "[ipv4-addr:value = '192.203.230.10']",
+        "confidence": 85,
+        "x_elastic_geo_location": {"lat": 33.5186, "lon": -86.8104},
+        "x_elastic_geo_point": [-86.8104, 33.5186]
       }
-    }
-  ]
+    ]
+  }
 }
 ```
 
 </details>
 
 <details>
-<summary>🔄 <strong>Bulk Enrichment</strong></summary>
+<summary>🎯 <strong>Get High-Confidence IOCs Only</strong></summary>
 
 ```bash
-# 📦 Enrich multiple IPs
-curl -X POST "http://localhost:8000/api/v1/enrich/bulk" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "ip_addresses": ["192.168.1.1", "10.0.0.1", "172.16.0.1"],
-    "force_refresh": false
+# 📊 Get IOCs with confidence ≥ 80%
+curl -X GET "http://localhost:8000/taxii2/iocs/collections/high-confidence-iocs/objects" \
+  -H "Accept: application/json" | jq '.data.objects | length'
+```
+
+</details>
+
+<details>
+<summary>🌍 <strong>Geolocation-Enriched IOCs</strong></summary>
+
+```bash
+# 🌍 Get IOCs with geographic data
+curl -X GET "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" \
+  -H "Accept: application/json" | \
+  jq '.data.objects[0] | {
+    ip: .pattern,
+    country: .x_elastic_geo_country_name,
+    city: .x_elastic_geo_city,
+    coordinates: .x_elastic_geo_location,
+    geo_point: .x_elastic_geo_point
   }'
 
-# 📋 Response
+# 📋 Example output
 {
-  "enriched": 3,
-  "failed": 0,
-  "cached": 1,
-  "fresh": 2,
-  "processing_time": "2.3s"
+  "ip": "[ipv4-addr:value = '192.203.230.10']",
+  "country": "United States",
+  "city": "Birmingham",
+  "coordinates": {"lat": 33.5186, "lon": -86.8104},
+  "geo_point": [-86.8104, 33.5186]
 }
+```
+
+</details>
+
+<details>
+<summary>📊 <strong>Preprocessing Statistics</strong></summary>
+
+```bash
+# 📊 Check preprocessing status
+python -m bin.preprocess_iocs
+
+# 📋 View cache status
+curl -X GET "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" \
+  -H "Accept: application/json" | \
+  jq -r '"Total IOCs: " + (.data.objects | length | tostring)'
+
+# 📈 Monitor processing over time
+tail -f logs/abuseipdb_ioc.log | grep "pre-processed"
 ```
 
 </details>
@@ -316,26 +495,31 @@ curl -X POST "http://localhost:8000/api/v1/enrich/bulk" \
 ### 🛡️ SIEM Integration Examples
 
 <details>
-<summary>⚡ <strong>Elastic SIEM Integration</strong></summary>
+<summary>⚡ <strong>Elasticsearch Custom Threat Intelligence</strong></summary>
 
 ```bash
-# 📊 CSV format for Elastic ingest
-curl -X GET "http://localhost:8000/api/v1/indicators/csv?fresh_only=true&min_confidence=80" \
-  -o elastic_threats.csv
+# 🎯 Configure Elasticsearch CTI with this URL:
+# http://your-server:8000/taxii2/iocs/collections/ioc-indicators/objects
 
-# 📋 Headers: ip_address,confidence,categories,country_code,reported_at
-# Use with Elastic Logstash or Beats for automated ingestion
+# 📊 Test the endpoint
+curl -X GET "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" \
+  -H "Accept: application/json" | \
+  jq '.data.objects | map(select(.x_elastic_geo_location)) | length'
+
+# 📋 Result: Number of IOCs with geolocation data for mapping
 ```
 
 </details>
 
 <details>
-<summary>🔥 <strong>Firewall Blocklist</strong></summary>
+<summary>🔥 <strong>Extract IPs for Firewall Rules</strong></summary>
 
 ```bash
-# 📝 Plain text for firewall rules
-curl -X GET "http://localhost:8000/api/v1/indicators/plain?min_confidence=90" \
-  -o blocklist.txt
+# 📝 Extract IP addresses from STIX indicators
+curl -X GET "http://localhost:8000/taxii2/iocs/collections/high-confidence-iocs/objects" \
+  -H "Accept: application/json" | \
+  jq -r '.data.objects[].pattern' | \
+  sed "s/\[ipv4-addr:value = '\(.*\)'\]/\1/" > blocklist.txt
 
 # 🔧 Use with iptables, pfSense, or other firewalls
 cat blocklist.txt | while read ip; do
@@ -348,23 +532,33 @@ done
 ### 🔍 Advanced Queries
 
 <details>
-<summary>🕐 <strong>Recent Threats Only</strong></summary>
+<summary>🌍 <strong>Geographic Analysis</strong></summary>
 
 ```bash
-# 📅 Last 24 hours with high confidence
-curl -X GET "http://localhost:8000/api/v1/indicators?fresh_only=true&min_confidence=85&hours=24" \
-  -H "Accept: application/json"
+# 🗺️ Analyze IOCs by country
+curl -X GET "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" \
+  -H "Accept: application/json" | \
+  jq -r '.data.objects[] | select(.x_elastic_geo_country_code) |
+    .x_elastic_geo_country_code + " - " + .pattern' | \
+  sort | uniq -c | sort -nr
+
+# 📋 Example output:
+#   3 CN - [ipv4-addr:value = '112.113.114.115']
+#   2 US - [ipv4-addr:value = '192.203.230.10']
+#   1 RU - [ipv4-addr:value = '45.155.205.86']
 ```
 
 </details>
 
 <details>
-<summary>🌍 <strong>Geographic Filtering</strong></summary>
+<summary>⚡ <strong>Cache Performance Monitoring</strong></summary>
 
 ```bash
-# 🗺️ Filter by country (requires enrichment)
-curl -X GET "http://localhost:8000/api/v1/indicators/enriched?country=CN,RU&min_confidence=75" \
-  -H "Accept: application/json"
+# 📊 Test cache performance
+time curl -s "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" > /dev/null
+
+# 📋 Expected: Sub-second response when cache is warm
+# 📋 If slow: Run python -m bin.preprocess_iocs to refresh cache
 ```
 
 </details>
@@ -394,9 +588,7 @@ POSTGRES_ADMIN_PASSWORD=admin_password
 
 # 🌐 AbuseIPDB Configuration
 ABUSEIPDB_API_KEY=your_api_key_here
-ABUSEIPDB_CONFIDENCE_MINIMUM=75
-ABUSEIPDB_RATE_LIMIT=1000
-ABUSEIPDB_CACHE_HOURS=24
+ABUSEIPDB_DAILY_LIMIT=10
 
 # ⚖️ Confidence Scoring
 LOCAL_CONFIDENCE_WEIGHT=0.7
@@ -407,9 +599,10 @@ MINIMUM_FINAL_CONFIDENCE=85
 # 🚀 API Configuration
 API_HOST=0.0.0.0
 API_PORT=8000
-API_SECRET_KEY=your_secret_key_here
-API_RATE_LIMIT=100
-API_WORKERS=4
+SECRET_KEY=your_secret_key_here
+
+# 💾 Redis Configuration
+REDIS_URL=redis://localhost:6379/0
 
 # 📝 Logging Configuration
 LOG_LEVEL=INFO
@@ -419,22 +612,24 @@ LOG_BACKUP_COUNT=5
 LOG_FORMAT=json
 
 # 🔄 Enrichment Configuration
-ENRICHMENT_INTERVAL_HOURS=12
-CACHE_REFRESH_HOURS=24
 BATCH_SIZE=100
-MAX_CONCURRENT_ENRICHMENTS=10
+PREPROCESSING_TTL=86400  # 24 hours
+
+# 🌍 Geolocation Configuration
+GEO_REQUEST_DELAY=1.0  # 1 second between requests
 ```
 
 </details>
 
-### 📊 Confidence Scoring Configuration
+### 📊 Key Configuration Parameters
 
-| Parameter                    | Default | Description                     |
-| ---------------------------- | ------- | ------------------------------- |
-| `LOCAL_CONFIDENCE_WEIGHT`    | 0.7     | Weight for local detections     |
-| `EXTERNAL_CONFIDENCE_WEIGHT` | 0.3     | Weight for AbuseIPDB data       |
-| `LOCAL_CONFIDENCE_BOOST`     | 10      | Boost for high-confidence local |
-| `MINIMUM_FINAL_CONFIDENCE`   | 85      | Minimum for boosted local IOCs  |
+| Parameter                    | Default | Description                    |
+| ---------------------------- | ------- | ------------------------------ |
+| `ABUSEIPDB_DAILY_LIMIT`      | 10      | Daily AbuseIPDB API calls      |
+| `LOCAL_CONFIDENCE_WEIGHT`    | 0.7     | Weight for local detections    |
+| `EXTERNAL_CONFIDENCE_WEIGHT` | 0.3     | Weight for AbuseIPDB data      |
+| `PREPROCESSING_TTL`          | 86400   | Redis cache TTL (seconds)      |
+| `GEO_REQUEST_DELAY`          | 1.0     | Delay between geo requests (s) |
 
 ---
 
@@ -603,6 +798,31 @@ psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT COUNT(*) FRO
 </details>
 
 <details>
+<summary>⚡ <strong>TAXII/Elasticsearch Integration Issues</strong></summary>
+
+```bash
+# ✅ Test TAXII discovery
+curl http://localhost:8000/taxii2
+
+# ✅ Test collections endpoint
+curl http://localhost:8000/taxii2/iocs/collections
+
+# ✅ Test data retrieval
+curl "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" | jq '.data.objects | length'
+
+# ✅ Check for pre-processed cache
+curl "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" | grep -o "pre-processed"
+```
+
+**🔧 Solutions:**
+
+- Ensure Redis is running: `redis-server --daemonize yes`
+- Run preprocessing: `python -m bin.preprocess_iocs`
+- Check logs for geolocation errors
+- Verify database connectivity
+</details>
+
+<details>
 <summary>🌐 <strong>AbuseIPDB API Issues</strong></summary>
 
 ```bash
@@ -613,46 +833,52 @@ curl -G https://api.abuseipdb.com/api/v2/check \
   -H "Key: $ABUSEIPDB_API_KEY" \
   -H "Accept: application/json"
 
-# ✅ Check current usage
-curl http://localhost:8000/api/v1/stats | jq '.abuseipdb'
+# ✅ Check daily limit usage (stored in Redis)
+redis-cli get "abuseipdb_daily_count"
 ```
 
 **🔧 Solutions:**
 
-- Verify API key is valid
-- Check daily rate limit usage
+- Verify API key in `.env`
+- Check daily limit: default is 10 requests/day
 - Wait for daily reset (UTC midnight)
-- Consider upgrading AbuseIPDB plan
+- Adjust `ABUSEIPDB_DAILY_LIMIT` in configuration
 </details>
 
 <details>
 <summary>📊 <strong>Performance Issues</strong></summary>
 
 ```bash
-# ✅ Check system resources
-curl http://localhost:8000/api/v1/stats | jq '.system'
+# ✅ Check cache performance
+time curl -s "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" > /dev/null
 
 # ✅ Monitor database connections
-curl http://localhost:8000/api/v1/health | jq '.database'
+curl http://localhost:8000/health
 
 # ✅ Review logs for errors
-tail -f logs/ioc_management.log | grep ERROR
+tail -f logs/abuseipdb_ioc.log | grep ERROR
+
+# ✅ Check Redis status
+redis-cli ping
+redis-cli info memory
 ```
 
 **🔧 Solutions:**
 
-- Increase connection pool size
-- Add database indexes
-- Enable Redis caching
-- Scale horizontally with load balancer
+- Run preprocessing to populate cache: `python -m bin.preprocess_iocs`
+- Ensure Redis is running and accessible
+- Increase connection pool size in `.env`
+- Monitor geolocation API rate limits
+- Check disk space for logs and cache
 </details>
 
 ### 📞 Getting Help
 
-- **📖 Documentation**: Check API docs at `/docs`
-- **📝 Logs**: Review application logs for errors
-- **🏥 Health Check**: Use `/api/v1/health` endpoint
-- **📊 Statistics**: Monitor `/api/v1/stats` for metrics
+- **📖 TAXII Documentation**: Check TAXII endpoints at `/taxii2`
+- **📝 Logs**: Review application logs in `logs/abuseipdb_ioc.log`
+- **🏥 Health Check**: Use `/health` endpoint
+- **📊 Cache Status**: Monitor Redis with `redis-cli info`
+- **🌍 Geolocation**: Check preprocessing stats after running `python -m bin.preprocess_iocs`
 
 ---
 
