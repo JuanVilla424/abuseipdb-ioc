@@ -9,6 +9,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from src.core.config import settings
+from src.utils.geolocation import enrich_with_geolocation
+from src.schemas.ioc import GeolocationData, ProviderData
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +205,7 @@ class IOCCorrelationEngine:
         # Map categories to STIX labels
         stix_labels = self.map_categories_to_stix(categories)
 
-        # Build correlated IOC
+        # Build correlated IOC with enhanced fields
         # Handle datetime serialization
         reported_at_str = None
         if reported_at:
@@ -212,6 +214,45 @@ class IOCCorrelationEngine:
                 reported_at = reported_at.replace(tzinfo=timezone.utc)
             reported_at_str = reported_at.isoformat()
 
+        # Calculate validity period (default 30 days for IOCs)
+        valid_until = None
+        if reported_at:
+            if hasattr(reported_at, "tzinfo") and reported_at.tzinfo is None:
+                reported_at = reported_at.replace(tzinfo=timezone.utc)
+            # IOCs expire after 30 days by default
+            from datetime import timedelta
+
+            valid_until = (reported_at + timedelta(days=30)).isoformat()
+
+        # Build provider information
+        providers = []
+        if external_data:
+            providers.append(
+                {
+                    "name": "AbuseIPDB",
+                    "source": "blacklist-api",
+                    "confidence": external_confidence,
+                    "first_seen": external_data.get("last_reported_at"),
+                    "last_seen": external_data.get("last_reported_at"),
+                    "reference_url": f"https://www.abuseipdb.com/check/{ip_address}",
+                }
+            )
+
+        # Always include local provider
+        providers.append(
+            {
+                "name": "Local Detection",
+                "source": "reported_ips",
+                "confidence": local_confidence,
+                "first_seen": reported_at_str,
+                "last_seen": reported_at_str,
+            }
+        )
+
+        # Map categories to threat types and kill chain phases
+        threat_types = self._map_categories_to_threat_types(categories)
+        kill_chain_phases = self._map_categories_to_kill_chain(categories)
+
         correlated_ioc = {
             "ip_address": ip_address,
             "confidence": final_confidence,
@@ -219,19 +260,106 @@ class IOCCorrelationEngine:
             "external_confidence": external_confidence,
             "freshness_score": freshness_score,
             "reported_at": reported_at_str,
+            "valid_from": reported_at_str,
+            "valid_until": valid_until,
             "categories": categories,
-            "stix_labels": stix_labels,
+            "labels": stix_labels,  # Changed from stix_labels to labels for consistency
+            "threat_types": threat_types,
+            "kill_chain_phases": kill_chain_phases,
             "source_priority": "local_primary",
+            "provider": "Local Detection" if not external_data else "AbuseIPDB",
             "enrichment": {
-                "country_code": country_code,
                 "isp": isp,
                 "has_external_validation": external_data is not None,
+                "geolocation": None,  # Will be populated by geolocation service
+                "providers": providers,
             },
         }
+
+        # Add external enrichment data
+        if external_data:
+            correlated_ioc["enrichment"].update(
+                {
+                    "usage_type": external_data.get("usage_type"),
+                    "domain": external_data.get("domain"),
+                    "abuse_confidence_score": external_confidence,
+                    "total_reports": external_data.get("total_reports"),
+                    "last_reported_at": external_data.get("last_reported_at"),
+                }
+            )
 
         # Add report ID if available
         if "report_id" in local_data:
             correlated_ioc["report_id"] = local_data["report_id"]
+
+        return correlated_ioc
+
+    def _map_categories_to_threat_types(self, categories: List[Any]) -> List[str]:
+        """Map categories to Elasticsearch threat types."""
+        category_to_threat = {
+            4: "ddos",
+            5: "brute-force",
+            14: "reconnaissance",
+            15: "exploit",
+            16: "data-collection",
+            18: "credential-access",
+            21: "web-attack",
+            22: "remote-access",
+        }
+
+        threat_types = []
+        for cat in categories:
+            cat_id = cat if isinstance(cat, int) else cat.get("id", cat)
+            if cat_id in category_to_threat:
+                threat_types.append(category_to_threat[cat_id])
+
+        return list(set(threat_types))  # Remove duplicates
+
+    def _map_categories_to_kill_chain(self, categories: List[Any]) -> List[str]:
+        """Map categories to MITRE ATT&CK kill chain phases."""
+        category_to_killchain = {
+            14: "reconnaissance",
+            15: "initial-access",
+            5: "credential-access",
+            18: "credential-access",
+            16: "collection",
+            4: "impact",
+            21: "initial-access",
+            22: "persistence",
+        }
+
+        phases = []
+        for cat in categories:
+            cat_id = cat if isinstance(cat, int) else cat.get("id", cat)
+            if cat_id in category_to_killchain:
+                phases.append(category_to_killchain[cat_id])
+
+        return list(set(phases))  # Remove duplicates
+
+    async def enrich_with_geolocation(self, correlated_ioc: Dict[str, Any]) -> Dict[str, Any]:
+        """Enrich IOC with geolocation data."""
+        try:
+            geo_data = await enrich_with_geolocation(correlated_ioc["ip_address"])
+            if geo_data:
+                # Convert to GeolocationData format
+                geolocation = {
+                    "country_code": geo_data.get("country_code"),
+                    "country_name": geo_data.get("country_name"),
+                    "region": geo_data.get("region"),
+                    "city": geo_data.get("city"),
+                    "latitude": geo_data.get("latitude"),
+                    "longitude": geo_data.get("longitude"),
+                    "continent": geo_data.get("continent"),
+                }
+
+                correlated_ioc["enrichment"]["geolocation"] = geolocation
+
+                # Update ISP if not already present
+                if not correlated_ioc["enrichment"].get("isp") and geo_data.get("isp"):
+                    correlated_ioc["enrichment"]["isp"] = geo_data.get("isp")
+
+        except Exception as e:
+            logger.warning(f"Geolocation enrichment failed for {correlated_ioc['ip_address']}: {e}")
 
         return correlated_ioc
 

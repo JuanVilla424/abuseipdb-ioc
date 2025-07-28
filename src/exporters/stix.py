@@ -14,15 +14,15 @@ class STIXExporter:
     """Export IOCs in STIX 2.1 format."""
 
     @staticmethod
-    def create_indicator(ioc: Dict[str, Any]) -> stix2.Indicator:
+    def create_indicator(ioc: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Create STIX 2.1 Indicator object from correlated IOC following official standard.
+        Create Elasticsearch-compatible STIX 2.1 Indicator object from correlated IOC.
 
         Args:
             ioc: Correlated IOC data
 
         Returns:
-            STIX Indicator object
+            STIX Indicator dictionary compatible with Elasticsearch Custom Threat Intelligence
         """
         # Handle both dict and Pydantic object
         if hasattr(ioc, "dict"):
@@ -33,62 +33,151 @@ class STIXExporter:
         # Create STIX 2.1 compliant pattern for IP indicator
         pattern = f"[ipv4-addr:value = '{ioc_data['ip_address']}']"
 
-        # Standard STIX 2.1 labels for malicious activity
-        labels = ["malicious-activity"]
+        # Use labels from correlation engine or fallback to standard
+        labels = ioc_data.get("labels", ["malicious-activity"])
 
-        # Add specific labels based on categories if available
-        categories = ioc_data.get("categories", [])
-        if categories:
-            # Map AbuseIPDB categories to STIX labels
-            category_map = {
-                4: "ddos",
-                5: "credential-access",
-                14: "reconnaissance",
-                15: "initial-access",
-                16: "collection",
-                18: "credential-access",
-                21: "initial-access",
-                22: "credential-access",
-            }
-            for cat in categories:
-                cat_id = cat if isinstance(cat, int) else cat.get("id", cat)
-                if cat_id in category_map:
-                    labels.append(category_map[cat_id])
+        # Ensure malicious-activity is always present
+        if "malicious-activity" not in labels:
+            labels.insert(0, "malicious-activity")
 
-        # Remove duplicates while preserving order
-        labels = list(dict.fromkeys(labels))
-
-        # External references for provenance
+        # External references for provenance with provider information
         external_refs = []
+
+        # Add report reference
         if ioc_data.get("report_id"):
+            source_name = "Local-Detection"
+            if ioc_data.get("provider") == "AbuseIPDB":
+                source_name = "AbuseIPDB"
+
             external_refs.append(
-                {"source_name": "AbuseIPDB-IOC", "external_id": ioc_data["report_id"]}
+                {
+                    "source_name": source_name,
+                    "external_id": ioc_data["report_id"],
+                    "url": (
+                        f"https://www.abuseipdb.com/check/{ioc_data['ip_address']}"
+                        if source_name == "AbuseIPDB"
+                        else None
+                    ),
+                }
             )
 
-        # Create standard STIX 2.1 indicator
-        indicator = stix2.Indicator(
-            pattern=pattern,
-            pattern_type="stix",
-            labels=labels,
-            confidence=ioc_data.get("confidence", 75),
-            created=ioc_data.get("reported_at", datetime.now(timezone.utc)),
-            modified=datetime.now(timezone.utc),
-            valid_from=ioc_data.get("reported_at", datetime.now(timezone.utc)),
-            external_references=external_refs if external_refs else None,
-        )
+        # Add provider references from enrichment
+        providers = ioc_data.get("enrichment", {}).get("providers", [])
+        for provider in providers:
+            if provider.get("reference_url"):
+                external_refs.append(
+                    {
+                        "source_name": provider["name"],
+                        "url": provider["reference_url"],
+                        "description": f"Threat intelligence from {provider['source']}",
+                    }
+                )
+
+        # Parse dates
+        def parse_date(date_str):
+            if isinstance(date_str, str):
+                return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            elif isinstance(date_str, datetime):
+                return date_str
+            return datetime.now(timezone.utc)
+
+        created_date = parse_date(ioc_data.get("reported_at", ioc_data.get("valid_from")))
+        valid_from_date = parse_date(ioc_data.get("valid_from", ioc_data.get("reported_at")))
+        valid_until_date = None
+        if ioc_data.get("valid_until"):
+            valid_until_date = parse_date(ioc_data["valid_until"])
+
+        # Create Elasticsearch-compatible STIX indicator
+        indicator = {
+            "type": "indicator",
+            "spec_version": "2.1",
+            "id": f"indicator--{ioc_data['ip_address'].replace('.', '-')}",
+            "created": created_date.isoformat(),
+            "modified": datetime.now(timezone.utc).isoformat(),
+            "pattern": pattern,
+            "pattern_type": "stix",
+            "pattern_version": "2.1",
+            "valid_from": valid_from_date.isoformat(),
+            "labels": labels,
+            "confidence": ioc_data.get("confidence", 75),
+            "lang": "en",
+            "revoked": False,
+        }
+
+        # Add valid_until if present (required for IOC expiration)
+        if valid_until_date:
+            indicator["valid_until"] = valid_until_date.isoformat()
+
+        # Add external references
+        if external_refs:
+            indicator["external_references"] = external_refs
+
+        # Add kill chain phases if available
+        kill_chain_phases = ioc_data.get("kill_chain_phases", [])
+        if kill_chain_phases:
+            indicator["kill_chain_phases"] = [
+                {"kill_chain_name": "mitre-attack", "phase_name": phase}
+                for phase in kill_chain_phases
+            ]
+
+        # Add custom properties for Elasticsearch
+        custom_properties = {
+            "x_elastic_provider": ioc_data.get("provider", "Local Detection"),
+            "x_elastic_confidence_score": ioc_data.get("confidence", 75),
+            "x_elastic_threat_types": ioc_data.get("threat_types", []),
+            "x_elastic_freshness_score": ioc_data.get("freshness_score", 1.0),
+        }
+
+        # Add geolocation data
+        geolocation = ioc_data.get("enrichment", {}).get("geolocation")
+        if geolocation:
+            lat = geolocation.get("latitude")
+            lon = geolocation.get("longitude")
+
+            custom_properties.update(
+                {
+                    "x_elastic_geo_country_code": geolocation.get("country_code"),
+                    "x_elastic_geo_country_name": geolocation.get("country_name"),
+                    "x_elastic_geo_city": geolocation.get("city"),
+                }
+            )
+
+            # Add coordinates in multiple ECS-compatible formats
+            if lat and lon:
+                custom_properties.update(
+                    {
+                        # STIX custom format (mantener para compatibilidad)
+                        "x_elastic_geo_coordinates": {"lat": lat, "lon": lon},
+                        # ECS geo_point format estándar - object format
+                        "x_elastic_geo_location": {"lat": lat, "lon": lon},
+                        # ECS geo_point format - array format [lon, lat]
+                        "x_elastic_geo_point": [lon, lat],
+                    }
+                )
+
+        # Add network information
+        enrichment = ioc_data.get("enrichment", {})
+        if enrichment.get("isp"):
+            custom_properties["x_elastic_isp"] = enrichment["isp"]
+        if enrichment.get("usage_type"):
+            custom_properties["x_elastic_usage_type"] = enrichment["usage_type"]
+
+        # Filter out None values from custom properties
+        custom_properties = {k: v for k, v in custom_properties.items() if v is not None}
+        indicator.update(custom_properties)
 
         return indicator
 
     @staticmethod
     def create_bundle(iocs: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Create STIX 2.1 Bundle containing multiple indicators following official standard.
+        Create Elasticsearch-compatible STIX 2.1 Bundle with envelope wrapper.
 
         Args:
             iocs: List of correlated IOCs
 
         Returns:
-            STIX Bundle as dictionary with 'objects' array for Elasticsearch
+            STIX Bundle as dictionary with 'objects' array for Elasticsearch Custom Threat Intelligence
         """
         # Create indicators
         indicators = []
@@ -105,12 +194,20 @@ class STIXExporter:
                 )
                 print(f"Error creating indicator for {ip}: {e}")
 
-        # Create standard STIX 2.1 bundle
-        bundle = stix2.Bundle(objects=indicators)
+        # Create STIX 2.1 bundle with proper metadata
+        bundle_id = f"bundle--{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+        current_time = datetime.now(timezone.utc).isoformat()
 
-        # Convert to dictionary for JSON serialization
-        bundle_dict = json.loads(bundle.serialize())
-        return bundle_dict
+        bundle = {
+            "type": "bundle",
+            "id": bundle_id,
+            "spec_version": "2.1",
+            "created": current_time,
+            "modified": current_time,
+            "objects": indicators,
+        }
+
+        return bundle
 
     @staticmethod
     def create_sighting(
