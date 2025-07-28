@@ -162,6 +162,12 @@ async def get_iocs(
         if min_confidence:
             correlated = correlation_engine.filter_by_confidence(correlated, min_confidence)
 
+        # Log response details
+        logger.info(
+            f"Returning {len(correlated)} IOCs out of {total_count} total (page {skip // limit + 1}, size {limit})"
+        )
+        logger.debug(f"First 3 IPs returned: {[ioc.get('ip_address') for ioc in correlated[:3]]}")
+
         return IOCListResponse(
             total=total_count, items=correlated, page=skip // limit + 1, page_size=limit
         )
