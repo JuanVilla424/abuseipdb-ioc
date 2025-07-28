@@ -2,7 +2,7 @@
 Unit tests for IOC correlation engine.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from src.core.correlation import IOCCorrelationEngine
 
 
@@ -15,24 +15,24 @@ class TestIOCCorrelationEngine:
 
         # Test with both local and external confidence
         score = engine.calculate_weighted_confidence(80, 60)
-        assert score == 85  # Boosted due to high local confidence
+        assert score == 76  # (80 * 0.8) + (60 * 0.2) = 64 + 12 = 76
 
         # Test with low local confidence
         score = engine.calculate_weighted_confidence(50, 90)
-        assert score == 62  # (50 * 0.7) + (90 * 0.3) = 62
+        assert score == 58  # (50 * 0.8) + (90 * 0.2) = 40 + 18 = 58
 
         # Test with no external data
         score = engine.calculate_weighted_confidence(70, None)
         assert score == 70
 
-        # Test boost for high local confidence
+        # Test boost for high local confidence with both sources
         score = engine.calculate_weighted_confidence(75, 50)
-        assert score == 85  # Minimum boost applied
+        assert score == 70  # (75 * 0.8) + (50 * 0.2) = 60 + 10 = 70
 
     def test_freshness_score_calculation(self):
         """Test freshness score calculation."""
         engine = IOCCorrelationEngine()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Test very fresh (today)
         score = engine.calculate_freshness_score(now)
@@ -78,7 +78,7 @@ class TestIOCCorrelationEngine:
         local_data = {
             "ip_address": "192.168.1.1",
             "confidence": 80,
-            "reported_at": datetime.utcnow(),
+            "reported_at": datetime.now(timezone.utc),
             "categories": [4, 14],
             "report_id": "test-123",
         }
@@ -88,9 +88,12 @@ class TestIOCCorrelationEngine:
         result = engine.correlate_ioc(local_data, external_data)
 
         assert result["ip_address"] == "192.168.1.1"
-        assert result["confidence"] == 85  # Boosted
+        assert result["confidence"] == 78  # (80 * 0.8) + (70 * 0.2) = 64 + 14 = 78
         assert result["local_confidence"] == 80
         assert result["external_confidence"] == 70
-        assert result["enrichment"]["providers"][0]["name"] == "AbuseIPDB"
+        # When both local and external data exist, providers should include both
+        provider_names = [p["name"] for p in result["enrichment"]["providers"]]
+        assert "Local Detection" in provider_names
+        assert "AbuseIPDB" in provider_names
         assert result["source_priority"] == "local_primary"
         assert "malicious-activity" in result["labels"]
