@@ -109,22 +109,22 @@ graph TB
 
 ```bash
 # 1️⃣ Clone repository
-git clone <repository-url>
-cd ioc-management-system
+git clone https://github.com/JuanVilla424/abuseipdb-ioc.git
+cd abuseipdb-ioc
 
 # 2️⃣ Create virtual environment
 python -m venv venv
 source venv/bin/activate  # 🪟 Windows: venv\Scripts\activate
 
 # 3️⃣ Install dependencies
-pip install -r requirements/prod.txt
+pip install -r requirements.txt
 
 # 4️⃣ Configure environment
 cp .env.example .env
 # ✏️ Edit .env with your credentials
 
 # 5️⃣ Initialize database (creates new tables only)
-python scripts/setup_database.py
+python bin/setup_database.py
 
 # 6️⃣ Start application
 uvicorn app.main:app --host 0.0.0.0 --port 8000
