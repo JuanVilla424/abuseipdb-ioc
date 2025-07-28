@@ -211,10 +211,10 @@ async def get_collection_objects(
         # Create STIX bundle
         bundle = STIXExporter.create_bundle(correlated)
 
-        # TAXII 2.1 envelope format
+        # TAXII 2.1 envelope format (correcto según especificación)
         envelope = {
             "more": len(correlated) >= limit,  # Indicates if more objects are available
-            "objects": bundle["objects"],
+            "data": bundle,  # Bundle completo con objects dentro
         }
 
         logger.info(
