@@ -129,8 +129,9 @@ class STIXExporter:
                 for phase in kill_chain_phases
             ]
 
-        # Add custom properties for Elasticsearch
+        # Add custom properties for Elasticsearch Custom Threat Intelligence
         custom_properties = {
+            # ECS threat.indicator fields
             "x_elastic_provider": ioc_data.get("provider", provider),
             "x_elastic_confidence_score": confidence_score,
             "x_elastic_threat_types": ioc_data.get("threat_types", []),
@@ -138,31 +139,62 @@ class STIXExporter:
             "x_elastic_dual_source": ioc_data.get("dual_source", False),
             "x_elastic_local_confidence": ioc_data.get("local_confidence", 0),
             "x_elastic_external_confidence": ioc_data.get("external_confidence", 0),
+            # ECS event categorization
+            "event.category": "threat",
+            "event.type": ["indicator"],
+            "event.kind": "enrichment",
+            # Core threat.indicator ECS fields
+            "threat.indicator.type": "ipv4-addr",
+            "threat.indicator.first_seen": valid_from_date.isoformat(),
+            "threat.indicator.last_seen": datetime.now(timezone.utc).isoformat(),
+            "threat.indicator.modified_at": datetime.now(timezone.utc).isoformat(),
+            "threat.indicator.sightings": 1,
+            "threat.indicator.provider": provider,
+            "threat.indicator.confidence": confidence_score,
+            "threat.indicator.ip": ioc_data["ip_address"],
+            "threat.indicator.marking.tlp": "GREEN",  # Default TLP marking
         }
 
-        # Add geolocation data
+        # Add description from external references or create default
+        if external_refs and external_refs[0].get("source_name"):
+            custom_properties["threat.indicator.description"] = (
+                f"Malicious IP detected by {external_refs[0]['source_name']}"
+            )
+        else:
+            custom_properties["threat.indicator.description"] = (
+                f"Malicious IP address {ioc_data['ip_address']} detected by local systems"
+            )
+
+        # Add reference URL
+        if external_refs and external_refs[0].get("url"):
+            custom_properties["threat.indicator.reference"] = external_refs[0]["url"]
+
+        # Add geolocation data with ECS compliance
         geolocation = ioc_data.get("enrichment", {}).get("geolocation")
         if geolocation:
             lat = geolocation.get("latitude")
             lon = geolocation.get("longitude")
 
+            # ECS geo fields
             custom_properties.update(
                 {
-                    "x_elastic_geo_country_code": geolocation.get("country_code"),
-                    "x_elastic_geo_country_name": geolocation.get("country_name"),
-                    "x_elastic_geo_city": geolocation.get("city"),
+                    "threat.indicator.geo.country_iso_code": geolocation.get("country_code"),
+                    "threat.indicator.geo.country_name": geolocation.get("country_name"),
+                    "threat.indicator.geo.city_name": geolocation.get("city"),
+                    "threat.indicator.geo.region_name": geolocation.get("region"),
+                    "threat.indicator.geo.continent_code": geolocation.get("continent"),
                 }
             )
 
-            # Add coordinates in multiple ECS-compatible formats
+            # Add coordinates in ECS-compatible formats
             if lat and lon:
                 custom_properties.update(
                     {
-                        # STIX custom format (mantener para compatibilidad)
+                        # ECS geo_point format - object format
+                        "threat.indicator.geo.location": {"lat": lat, "lon": lon},
+                        # Legacy formats for compatibility
                         "x_elastic_geo_coordinates": {"lat": lat, "lon": lon},
-                        # ECS geo_point format estándar - object format
                         "x_elastic_geo_location": {"lat": lat, "lon": lon},
-                        # ECS geo_point format - array format [lon, lat]
                         "x_elastic_geo_point": [lon, lat],
                     }
                 )
@@ -170,9 +202,49 @@ class STIXExporter:
         # Add network information
         enrichment = ioc_data.get("enrichment", {})
         if enrichment.get("isp"):
-            custom_properties["x_elastic_isp"] = enrichment["isp"]
+            custom_properties["threat.indicator.as.organization.name"] = enrichment["isp"]
+            custom_properties["x_elastic_isp"] = enrichment["isp"]  # Legacy compatibility
         if enrichment.get("usage_type"):
             custom_properties["x_elastic_usage_type"] = enrichment["usage_type"]
+
+        # Add threat indicator tags based on categories and threat types
+        tags = []
+        threat_types = ioc_data.get("threat_types", [])
+        if threat_types:
+            tags.extend(threat_types)
+
+        # Add category-based tags
+        categories = ioc_data.get("categories", [])
+        for category in categories:
+            if isinstance(category, str) and category not in tags:
+                tags.append(category)
+
+        # Add source-based tags
+        if ioc_data.get("dual_source"):
+            tags.append("dual-source")
+        if ioc_data.get("source") == "abuseipdb":
+            tags.append("abuseipdb-blacklist")
+        else:
+            tags.append("local-detection")
+
+        if tags:
+            custom_properties["threat.indicator.tags"] = tags
+
+        # Add scanner stats if available (for compatibility)
+        total_reports = enrichment.get("total_reports", 0)
+        if total_reports and total_reports > 0:
+            custom_properties["threat.indicator.scanner_stats"] = total_reports
+
+        # Add AS number if available from geolocation
+        if geolocation and geolocation.get("org"):
+            # Try to extract AS number from org field (common format: "AS15169 Google LLC")
+            org = geolocation.get("org", "")
+            if org.startswith("AS") and " " in org:
+                try:
+                    as_number = int(org.split(" ")[0][2:])  # Extract number after "AS"
+                    custom_properties["threat.indicator.as.number"] = as_number
+                except (ValueError, IndexError):
+                    pass
 
         # Filter out None values from custom properties
         custom_properties = {k: v for k, v in custom_properties.items() if v is not None}
