@@ -92,7 +92,7 @@ class STIXExporter:
 
         # Determine provider based on source
         source = ioc_data.get("source", "local")
-        provider = "AbuseIPDB" if source == "abuseipdb" else "Local Detection"
+        provider = "abuseipdb" if source == "abuseipdb" else "abuseipdb-ioc-db-provider"
 
         # Create Elasticsearch-compatible STIX indicator
         indicator = {
@@ -171,7 +171,26 @@ class STIXExporter:
             lat = geolocation.get("latitude")
             lon = geolocation.get("longitude")
 
-            # ECS geo fields
+            # Build threat.indicator.geo object
+            geo_data = {
+                "country_iso_code": geolocation.get("country_code"),
+                "country_name": geolocation.get("country_name"),
+                "city_name": geolocation.get("city"),
+                "region_name": geolocation.get("region"),
+                "continent_code": geolocation.get("continent"),
+            }
+
+            # Add coordinates if available
+            if lat and lon:
+                geo_data["location"] = {"lat": lat, "lon": lon}
+
+            # Filter out None values
+            geo_data = {k: v for k, v in geo_data.items() if v is not None}
+
+            # Add to custom properties
+            custom_properties["threat.indicator.geo"] = geo_data
+
+            # Also add individual ECS fields for backward compatibility
             custom_properties.update(
                 {
                     "threat.indicator.geo.country_iso_code": geolocation.get("country_code"),
