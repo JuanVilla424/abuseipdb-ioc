@@ -7,6 +7,7 @@ Converts correlated IOCs to STIX 2.1 format for SIEM integration.
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import stix2
+import json
 
 
 class STIXExporter:
@@ -15,7 +16,7 @@ class STIXExporter:
     @staticmethod
     def create_indicator(ioc: Dict[str, Any]) -> stix2.Indicator:
         """
-        Create STIX Indicator object from correlated IOC.
+        Create STIX 2.1 Indicator object from correlated IOC following official standard.
 
         Args:
             ioc: Correlated IOC data
@@ -23,40 +24,57 @@ class STIXExporter:
         Returns:
             STIX Indicator object
         """
-        # Create pattern for IP indicator
-        pattern = f"[ipv4-addr:value = '{ioc['ip_address']}']"
+        # Handle both dict and Pydantic object
+        if hasattr(ioc, "dict"):
+            ioc_data = ioc.dict()
+        else:
+            ioc_data = ioc
 
-        # Custom properties for local intelligence
-        custom_properties = {
-            "x_local_detection": True,
-            "x_local_confidence": ioc.get("local_confidence", 75),
-            "x_source_priority": "local_primary",
-            "x_freshness_score": ioc.get("freshness_score", 1.0),
-        }
+        # Create STIX 2.1 compliant pattern for IP indicator
+        pattern = f"[ipv4-addr:value = '{ioc_data['ip_address']}']"
 
-        # Add optional properties
-        if ioc.get("report_id"):
-            custom_properties["x_report_id"] = ioc["report_id"]
+        # Standard STIX 2.1 labels for malicious activity
+        labels = ["malicious-activity"]
 
-        if ioc.get("external_confidence") is not None:
-            custom_properties["x_abuseipdb_confidence"] = ioc["external_confidence"]
+        # Add specific labels based on categories if available
+        categories = ioc_data.get("categories", [])
+        if categories:
+            # Map AbuseIPDB categories to STIX labels
+            category_map = {
+                4: "ddos",
+                5: "credential-access",
+                14: "reconnaissance",
+                15: "initial-access",
+                16: "collection",
+                18: "credential-access",
+                21: "initial-access",
+                22: "credential-access",
+            }
+            for cat in categories:
+                cat_id = cat if isinstance(cat, int) else cat.get("id", cat)
+                if cat_id in category_map:
+                    labels.append(category_map[cat_id])
 
-        if ioc.get("enrichment", {}).get("country_code"):
-            custom_properties["x_country_code"] = ioc["enrichment"]["country_code"]
+        # Remove duplicates while preserving order
+        labels = list(dict.fromkeys(labels))
 
-        if ioc.get("enrichment", {}).get("isp"):
-            custom_properties["x_isp"] = ioc["enrichment"]["isp"]
+        # External references for provenance
+        external_refs = []
+        if ioc_data.get("report_id"):
+            external_refs.append(
+                {"source_name": "AbuseIPDB-IOC", "external_id": ioc_data["report_id"]}
+            )
 
-        # Create indicator
+        # Create standard STIX 2.1 indicator
         indicator = stix2.Indicator(
             pattern=pattern,
             pattern_type="stix",
-            labels=ioc.get("stix_labels", ["malicious-activity"]),
-            confidence=ioc.get("confidence", 75),
-            created=ioc.get("reported_at", datetime.now(timezone.utc)),
+            labels=labels,
+            confidence=ioc_data.get("confidence", 75),
+            created=ioc_data.get("reported_at", datetime.now(timezone.utc)),
             modified=datetime.now(timezone.utc),
-            custom_properties=custom_properties,
-            allow_custom=True,
+            valid_from=ioc_data.get("reported_at", datetime.now(timezone.utc)),
+            external_references=external_refs if external_refs else None,
         )
 
         return indicator
@@ -64,13 +82,13 @@ class STIXExporter:
     @staticmethod
     def create_bundle(iocs: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Create STIX Bundle containing multiple indicators.
+        Create STIX 2.1 Bundle containing multiple indicators following official standard.
 
         Args:
             iocs: List of correlated IOCs
 
         Returns:
-            STIX Bundle as dictionary
+            STIX Bundle as dictionary with 'objects' array for Elasticsearch
         """
         # Create indicators
         indicators = []
@@ -80,13 +98,19 @@ class STIXExporter:
                 indicators.append(indicator)
             except Exception as e:
                 # Log error but continue processing
-                print(f"Error creating indicator for {ioc.get('ip_address')}: {e}")
+                ip = (
+                    ioc.ip_address
+                    if hasattr(ioc, "ip_address")
+                    else ioc.get("ip_address", "unknown")
+                )
+                print(f"Error creating indicator for {ip}: {e}")
 
-        # Create bundle
-        bundle = stix2.Bundle(objects=indicators, allow_custom=True)
+        # Create standard STIX 2.1 bundle
+        bundle = stix2.Bundle(objects=indicators)
 
         # Convert to dictionary for JSON serialization
-        return bundle.serialize(pretty=True)
+        bundle_dict = json.loads(bundle.serialize())
+        return bundle_dict
 
     @staticmethod
     def create_sighting(

@@ -45,12 +45,7 @@ app.include_router(health.router)
 app.include_router(iocs.router)
 
 
-# Add redirect from /api/v1/iocs to /api/v1/iocs/
-@app.get("/api/v1/iocs", include_in_schema=False)
-async def redirect_iocs():
-    from fastapi.responses import RedirectResponse
-
-    return RedirectResponse(url="/api/v1/iocs/", status_code=308)
+# No redirect needed anymore
 
 
 @app.get("/")
