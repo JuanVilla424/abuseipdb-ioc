@@ -40,19 +40,19 @@
 ### 🎯 Core Capabilities
 
 - **🔍 Non-invasive Integration** - Read-only access to existing `reported_ips` table
-- **🌐 AbuseIPDB Enrichment—**Intelligent caching with rate limiting (1,000+ requests/day)
+- **🌐 AbuseIPDB Enrichment**-Intelligent caching with rate limiting (1,000+ requests/day)
 - **⚖️ Weighted Confidence Scoring** - Prioritizes local detections (70%) over external sources (30%)
-- **📊 STIX 2.x Compliance—**Full standardized threat intelligence format support
+- **📊 STIX 2.x Compliance**-Full standardized threat intelligence format support
 - **🔄 Multiple Export Formats** - JSON, STIX bundles, CSV, plain text
 - **⚡ High Performance** - Async FastAPI with connection pooling
 
 ### 🛡️ Security & Intelligence
 
-- **🎯 Intelligence Prioritization—**Local detections as primary source
-- **🔄 Real-time Correlation—**Live fusion of local and external threat data
+- **🎯 Intelligence Prioritization**-Local detections as primary source
+- **🔄 Real-time Correlation**-Live fusion of local and external threat data
 - **📈 Confidence Boosting** - Local detections ≥75% confidence get minimum 85% final score
 - **🔐 Secure API** - Key-based authentication with rate limiting
-- **📝 Comprehensive Logging—**Professional audit trails with file rotation
+- **📝 Comprehensive Logging**-Professional audit trails with file rotation
 
 ### 🚀 Integration Ready
 
@@ -558,12 +558,12 @@ curl http://localhost:8000/api/v1/stats
 
 ### 🛡️ Security Features
 
-- **🔐 Read-only Database Access** - Existing tables protected
-- **🔑 API Key Authentication—**Secure endpoint access
-- **⚡ Rate Limiting—**Prevents abuse and overload
-- **✅ Input Validation—**All inputs validated with Pydantic
-- **📝 Audit Logging—**Complete operation trails
-- **🔒 CORS Configuration** - Cross-origin protection
+- **🔐 Read-only Database Access** - Existing tables protected.
+- **🔑 API Key Authentication** - Secure endpoint access.
+- **⚡ Rate Limiting** - Prevents abuse and overload.
+- **✅ Input Validation** - All inputs validated with Pydantic.
+- **📝 Audit Logging** - Complete operation trails.
+- **🔒 CORS Configuration** - Cross-origin protection.
 
 ### 🎯 Best Practices
 
