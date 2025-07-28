@@ -6,7 +6,7 @@ prioritizing local detections over external enrichment.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from src.core.config import settings
 
@@ -84,7 +84,7 @@ class IOCCorrelationEngine:
         Returns:
             Freshness score (0.0-1.0), where 1.0 is most recent
         """
-        reference_time = last_seen or datetime.utcnow()
+        reference_time = last_seen or datetime.now(timezone.utc)
         age_days = (reference_time - reported_at).days
 
         # Freshness decay curve

@@ -3,7 +3,7 @@ Health check endpoints.
 """
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +29,7 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> APIHealth:
         "status": "healthy",
         "database": False,
         "abuseipdb": True,  # Assume healthy unless we check
-        "timestamp": datetime.utcnow(),
+        "timestamp": datetime.now(timezone.utc),
         "daily_requests_used": 0,
         "daily_requests_limit": settings.ABUSEIPDB_RATE_LIMIT,
     }
