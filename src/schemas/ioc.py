@@ -33,7 +33,7 @@ class LocalIOC(IOCBase):
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class EnrichmentData(BaseModel):
@@ -91,7 +91,7 @@ class BulkCheckRequest(BaseModel):
 class ExportFormat(BaseModel):
     """Supported export formats."""
 
-    format: str = Field(..., regex="^(json|stix|csv|txt)$")
+    format: str = Field(..., pattern="^(json|stix|csv|txt)$")
     include_enrichment: bool = True
 
 

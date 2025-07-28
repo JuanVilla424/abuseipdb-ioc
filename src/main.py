@@ -5,7 +5,7 @@ Main FastAPI application.
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.core.config import settings
+from src.core.config import settings, get_version
 from src.core.logging import setup_logging
 from src.api.endpoints import iocs, health
 from src.db.database import engine
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI app
 app = FastAPI(
     title="AbuseIPDB IOC Management System",
-    version="1.0.0",
+    version=get_version(),
     description="IOC Management System with AbuseIPDB Integration",
     lifespan=lifespan,
 )
@@ -50,7 +50,7 @@ async def root():
     """Root endpoint."""
     return {
         "name": "AbuseIPDB IOC Management System",
-        "version": "1.0.0",
+        "version": get_version(),
         "docs": "/docs",
         "health": "/api/v1/health",
     }
