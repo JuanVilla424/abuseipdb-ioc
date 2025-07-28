@@ -307,6 +307,87 @@ curl http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects
 
 ---
 
+## 🚀 Automatic Processing Service
+
+The system can automatically process IOCs on startup and run continuously in the background.
+
+### 📋 Service Installation
+
+Install the automatic processing service to run on system startup:
+
+```bash
+# 🔧 Install systemd service
+cd /home/na0nh/Projects/abuseipdb-ioc
+./scripts/install_service.sh
+
+# ⚡ Start the service
+sudo systemctl start abuseipdb-ioc-processor
+
+# 📊 Check service status
+sudo systemctl status abuseipdb-ioc-processor
+
+# 📋 View live logs
+sudo journalctl -u abuseipdb-ioc-processor -f
+```
+
+### 🎛️ Service Management
+
+```bash
+# Start service
+sudo systemctl start abuseipdb-ioc-processor
+
+# Stop service
+sudo systemctl stop abuseipdb-ioc-processor
+
+# Restart service
+sudo systemctl restart abuseipdb-ioc-processor
+
+# Enable auto-start on boot
+sudo systemctl enable abuseipdb-ioc-processor
+
+# Disable auto-start on boot
+sudo systemctl disable abuseipdb-ioc-processor
+
+# View service logs
+sudo journalctl -u abuseipdb-ioc-processor -f
+```
+
+### 🔧 Manual Testing
+
+For development and testing, you can run the processor manually:
+
+```bash
+# 🧪 Run processor manually (for testing)
+./scripts/start_processor.sh
+
+# Or run directly with Python
+python bin/startup_processor.py
+```
+
+### ⚙️ Configuration
+
+The service behavior is controlled by environment variables:
+
+```bash
+# Process IOCs every hour (3600 seconds)
+IOC_PROCESSING_INTERVAL=3600
+
+# Enable automatic startup processing
+AUTO_START_PROCESSING=true
+```
+
+**🎯 Features:**
+
+- ✅ **Automatic startup** - Processes IOCs when system starts
+- ✅ **Continuous processing** - Runs every hour (configurable)
+- ✅ **Redis caching** - 24-hour TTL for preprocessed IOCs
+- ✅ **Rate limiting** - Respects geolocation API limits
+- ✅ **Error recovery** - Automatically retries on failures
+- ✅ **Health monitoring** - System logs and statistics
+- ✅ **Sequential processing** - Avoids rate limit violations
+
+---
+
 ## 🔧 TAXII 2.1 Server
 
 The system provides a complete TAXII 2.1 server implementation for standardized threat intelligence sharing.

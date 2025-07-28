@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     REDIS_URL: Optional[str] = None
     CACHE_TTL: int = 3600  # 1 hour default
 
+    # IOC Processing Configuration
+    IOC_PROCESSING_INTERVAL: int = 3600  # Process IOCs every hour (3600 seconds)
+    AUTO_START_PROCESSING: bool = True  # Auto-start IOC processing on system startup
+
     @property
     def database_url(self) -> str:
         """Construct PostgreSQL database URL."""
