@@ -60,7 +60,7 @@
 
 - **🌍 Multi-Source Geolocation** - IP-API, IPWhois, GeoJS with intelligent fallback
 - **⚡ Elasticsearch CTI Integration** - Direct Custom Threat Intelligence support
-- **📊 IOC Preprocessing** - Background enrichment and caching for instant responses
+- **📊 IOC Preprocessing** - Async background worker processes IOCs every 5 minutes
 - **🔄 Real-time Correlation** - Live fusion of local and external threat data
 - **📈 Confidence Boosting** - Local detections ≥75% confidence get minimum 85% final score
 - **🎯 Intelligence Prioritization** - Local detections as primary source
@@ -78,7 +78,7 @@
 
 - **⚡ Elasticsearch Ready** - Native CTI format with geo_point mapping for maps
 - **🔧 TAXII 2.1 Collections** - Standard and high-confidence IOC collections
-- **💾 Redis Caching** - 24-hour TTL with preprocessing for performance
+- **💾 Redis Caching** - 10-minute TTL with continuous background preprocessing
 - **🌍 Geographic Enrichment** - Latitude/longitude coordinates in multiple ECS formats
 - **🔐 Rate Limiting** - Respectful API usage with 1-second delays
 - **📝 Comprehensive Logging** - Professional audit trails with structured JSON
@@ -98,14 +98,15 @@
 
 ```mermaid
 graph TB
-    A[🗄️ PostgreSQL reported_ips<br/>PRIMARY SOURCE - READ-ONLY] --> B[📊 IOC Preprocessor<br/>Dual Source Detection]
-    C[🌐 AbuseIPDB Blacklist API<br/>Daily Limit + 1h Cache] --> B
-    D[🌍 Multi-Geo Services<br/>Dynamic Rate Limiting] --> B
+    A[🗄️ PostgreSQL reported_ips<br/>PRIMARY SOURCE - READ-ONLY] --> W[⚙️ Background Worker<br/>IOC Processor - 5min cycle]
+    C[🌐 AbuseIPDB Blacklist API<br/>Daily Limit + 1h Cache] --> W
+    D[🌍 Multi-Geo Services<br/>Dynamic Rate Limiting] --> W
 
+    W --> B[📊 IOC Preprocessor<br/>Batch Processing]
     B --> E[⚖️ Correlation Engine<br/>Local 80% + External 20%]
-    E --> F[💾 Redis Cache<br/>24h TTL Preprocessed IOCs]
+    E --> F[💾 Redis Cache<br/>10min TTL Preprocessed IOCs]
 
-    F --> G[🔧 TAXII 2.1 Server<br/>Dual Source References]
+    F --> G[🔧 TAXII 2.1 Server<br/>Instant Response]
     F --> H[⚡ Elasticsearch CTI<br/>Native Integration]
 
     G --> I[📊 STIX 2.1 Bundles<br/>Weighted Confidence]
@@ -114,8 +115,8 @@ graph TB
     I --> K[🛡️ SIEM Integration<br/>Threat Intelligence]
     J --> K
 
-    L[🔄 Background Processing<br/>Scheduled Enrichment] --> B
-    M[📈 Multi-Provider Display<br/>Source Attribution] --> I
+    L[📈 Multi-Provider Display<br/>Source Attribution] --> I
+    N[⏱️ Async Background Task<br/>Non-blocking Processing] --> W
 
     style A fill:#e3f2fd
     style C fill:#fff3e0
@@ -124,6 +125,7 @@ graph TB
     style F fill:#ffebee
     style G fill:#fce4ec
     style H fill:#fff9c4
+    style W fill:#e1f5fe
 ```
 
 </div>
@@ -132,14 +134,15 @@ graph TB
 
 | Stage                        | Component           | Processing                                                |
 | ---------------------------- | ------------------- | --------------------------------------------------------- |
+| ⚙️ **Background Worker**     | IOC Processor       | Runs every 5 minutes, processes in batches of 100         |
 | 🔍 **Data Ingestion**        | PostgreSQL Reader   | Fetches ALL IOCs from reported_ips table (primary source) |
 | 🌐 **External Enrichment**   | AbuseIPDB Blacklist | Daily limits + 1h cache, confidence ≥50                   |
 | 🔄 **Dual Source Detection** | IOC Preprocessor    | Identifies IPs in both local + AbuseIPDB sources          |
 | 🌍 **Geolocation**           | Multi-Source Geo    | 3 fallback services with dynamic rate limiting            |
 | ⚖️ **Correlation**           | Weighted IOC Engine | Scoring: Local 80% + External 20%                         |
-| 💾 **Preprocessing**         | Background Worker   | Enriches all IOCs, caches for 24h                         |
+| 💾 **Preprocessing**         | Redis Cache         | Stores enriched IOCs for 10 minutes (600s TTL)            |
 | 📊 **Multi-Provider STIX**   | Standards Exporter  | Dual source references in external_references             |
-| 🔧 **TAXII Distribution**    | TAXII 2.1 Server    | STIX 2.1 bundles with weighted confidence scores          |
+| 🔧 **TAXII Distribution**    | TAXII 2.1 Server    | Instant response from cache, respects limit parameter     |
 | ⚡ **Elasticsearch CTI**     | Native Integration  | ECS-compatible geo_point + dual source metadata           |
 
 ### 🔄 Dual Source Intelligence Architecture
@@ -304,6 +307,93 @@ curl http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects | jq '
 # ⚡ Test Elasticsearch CTI endpoint
 curl http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects
 ```
+
+---
+
+## 🚀 Background IOC Processing
+
+### ⚙️ Automatic Background Worker
+
+The system includes an integrated background worker that automatically processes IOCs:
+
+- **🔄 Processing Cycle**: Every 5 minutes
+- **📈 Batch Size**: 100 IOCs per batch to prevent memory issues
+- **💾 Cache TTL**: 10 minutes for preprocessed IOCs
+- **⏱️ Non-blocking**: Runs asynchronously without affecting API performance
+
+### 🎯 How It Works
+
+1. **🚀 Automatic Start**: Worker starts automatically when the FastAPI application launches
+2. **🔍 Data Collection**:
+   - Fetches all IOCs from PostgreSQL `reported_ips` table
+   - Retrieves AbuseIPDB blacklist (respecting rate limits)
+3. **⚖️ Processing**:
+   - Correlates local and external data
+   - Applies weighted confidence scoring (Local 80% + External 20%)
+   - Enriches with geolocation data
+4. **💾 Caching**: Stores processed IOCs in Redis with keys:
+   - `preprocessed_iocs`: All processed IOCs
+   - `high_confidence_iocs`: IOCs with confidence ≥80%
+
+### 📊 TAXII Performance Benefits
+
+- **⚡ Instant Response**: TAXII endpoints serve pre-processed data from cache
+- **🎯 Respects Limits**: `limit` parameter properly applied without processing overhead
+- **🔒 No Blocking**: Heavy geolocation processing happens in background
+- **📈 Scalable**: Can handle 10,000+ IOCs without impacting API response times
+
+### 🔧 Manual Processing (Optional)
+
+For immediate processing outside the 5-minute cycle:
+
+```bash
+# Force immediate IOC preprocessing
+python bin/ioc_preprocessor.py
+```
+
+# Disable auto-start on boot
+
+sudo systemctl disable abuseipdb-ioc-processor
+
+# View service logs
+
+sudo journalctl -u abuseipdb-ioc-processor -f
+
+````
+
+### 🔧 Manual Testing
+
+For development and testing, you can run the processor manually:
+
+```bash
+# 🧪 Run processor manually (for testing)
+./scripts/start_processor.sh
+
+# Or run directly with Python
+python bin/startup_processor.py
+````
+
+### ⚙️ Configuration
+
+The service behavior is controlled by environment variables:
+
+```bash
+# Process IOCs every hour (3600 seconds)
+IOC_PROCESSING_INTERVAL=3600
+
+# Enable automatic startup processing
+AUTO_START_PROCESSING=true
+```
+
+**🎯 Features:**
+
+- ✅ **Automatic startup** - Processes IOCs when system starts
+- ✅ **Continuous processing** - Runs every hour (configurable)
+- ✅ **Redis caching** - 24-hour TTL for preprocessed IOCs
+- ✅ **Rate limiting** - Respects geolocation API limits
+- ✅ **Error recovery** - Automatically retries on failures
+- ✅ **Health monitoring** - System logs and statistics
+- ✅ **Sequential processing** - Avoids rate limit violations
 
 ---
 
