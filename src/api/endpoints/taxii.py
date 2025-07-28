@@ -185,7 +185,8 @@ async def get_collection_objects(
         correlation_engine = IOCCorrelationEngine()
         abuseipdb_client = AbuseIPDBClient(settings.ABUSEIPDB_API_KEY)
 
-        # Get ALL IOCs from PostgreSQL tables (NO LIMIT!)
+        # 1️⃣ Get ALL IOCs from PostgreSQL tables (LOCAL SOURCE)
+        logger.info("Fetching local IOCs from reported_ips table...")
         query = select(ReportedIPs)
         if min_confidence:
             query = query.where(ReportedIPs.confidence >= min_confidence)
@@ -194,7 +195,7 @@ async def get_collection_objects(
         result = await db.execute(query)
         local_iocs = result.scalars().all()
 
-        # Convert to dictionaries
+        # Convert local IOCs to dictionaries
         local_data = []
         for ioc in local_iocs:
             local_data.append(
@@ -205,12 +206,54 @@ async def get_collection_objects(
                     "report_id": ioc.report_id,
                     "categories": ioc.categories or [],
                     "created_at": ioc.created_at,
+                    "source": "local",  # Mark as local source
                 }
             )
+        logger.info(f"Found {len(local_data)} local IOCs")
 
-        # Get cached enrichment data from abuseipdb_cache table
-        ip_addresses = [ioc["ip_address"] for ioc in local_data]
-        cache_query = select(AbuseIPDBCache).where(AbuseIPDBCache.ip_address.in_(ip_addresses))
+        # 2️⃣ Get IOCs from AbuseIPDB blacklist (EXTERNAL SOURCE)
+        logger.info("Fetching IOCs from AbuseIPDB blacklist...")
+        try:
+            blacklist_response = await abuseipdb_client.get_blacklist(
+                db=db,
+                confidence_minimum=50,  # Confidence ≥50 as requested
+                limit=10000,  # Maximum available
+            )
+
+            # Convert AbuseIPDB blacklist to our format
+            abuseipdb_data = []
+            if blacklist_response.get("data"):
+                for item in blacklist_response["data"]:
+                    # Avoid duplicates with local data
+                    ip_address = item.get("ipAddress")
+                    if not any(local_ioc["ip_address"] == ip_address for local_ioc in local_data):
+                        abuseipdb_data.append(
+                            {
+                                "ip_address": ip_address,
+                                "confidence": item.get("abuseConfidenceScore", 50),
+                                "reported_at": datetime.now(timezone.utc),  # Mark as fresh
+                                "report_id": f"ABUSEIPDB-{item.get('abuseConfidenceScore', 50)}",
+                                "categories": ["abuseipdb-blacklist"],
+                                "created_at": datetime.now(timezone.utc),
+                                "source": "abuseipdb",  # Mark as external source
+                            }
+                        )
+                logger.info(f"Found {len(abuseipdb_data)} unique AbuseIPDB blacklist IOCs")
+            else:
+                logger.info("No AbuseIPDB blacklist data available (likely rate limited)")
+        except Exception as e:
+            logger.error(f"Error fetching AbuseIPDB blacklist: {e}")
+            abuseipdb_data = []
+
+        # 3️⃣ Combine both sources
+        all_iocs = local_data + abuseipdb_data
+        logger.info(
+            f"Total IOCs to process: {len(all_iocs)} (Local: {len(local_data)}, AbuseIPDB: {len(abuseipdb_data)})"
+        )
+
+        # Get cached enrichment data from abuseipdb_cache table for ALL IPs
+        all_ip_addresses = [ioc["ip_address"] for ioc in all_iocs]
+        cache_query = select(AbuseIPDBCache).where(AbuseIPDBCache.ip_address.in_(all_ip_addresses))
         cache_result = await db.execute(cache_query)
         cached_enrichments = cache_result.scalars().all()
 
@@ -225,23 +268,32 @@ async def get_collection_objects(
                 "last_reported_at": enrichment.last_reported_at,
             }
 
-        # Correlate IOCs with cached data
+        # 4️⃣ Correlate ALL IOCs (local + AbuseIPDB) with cached data
         correlated = []
-        for local_ioc in local_data:
-            ip_address = local_ioc["ip_address"]
+        for ioc in all_iocs:
+            ip_address = ioc["ip_address"]
             external_ioc_data = external_data.get(ip_address)
 
+            # For AbuseIPDB blacklist items, they already have abuse confidence
+            if ioc.get("source") == "abuseipdb" and not external_ioc_data:
+                external_ioc_data = {
+                    "abuse_confidence_score": ioc["confidence"],
+                    "country_code": None,
+                    "isp": None,
+                    "usage_type": None,
+                    "total_reports": 1,  # At least 1 report to be in blacklist
+                    "last_reported_at": ioc["reported_at"],
+                }
+
             try:
-                individual_correlated = correlation_engine.correlate_ioc(
-                    local_ioc, external_ioc_data
-                )
+                individual_correlated = correlation_engine.correlate_ioc(ioc, external_ioc_data)
                 enriched_ioc = await correlation_engine.enrich_with_geolocation(
                     individual_correlated
                 )
                 correlated.append(enriched_ioc)
             except Exception as e:
                 logger.error(f"TAXII correlation failed for {ip_address}: {e}")
-                correlated.append(local_ioc)
+                correlated.append(ioc)
 
         # Apply limit only for TAXII response (not for DB query!)
         total_objects = len(correlated)

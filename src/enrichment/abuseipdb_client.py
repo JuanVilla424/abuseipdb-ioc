@@ -322,7 +322,7 @@ class AbuseIPDBClient:
         result = await db.execute(stmt)
         usage = result.scalar_one_or_none()
 
-        if usage and usage.blacklist_requests >= daily_limit:
+        if usage and (usage.blacklist_requests or 0) >= daily_limit:
             logger.warning(f"Daily blacklist limit ({daily_limit}) reached")
             return {"data": []}
 
