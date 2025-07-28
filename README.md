@@ -332,8 +332,9 @@ The system includes an integrated background worker that automatically processes
    - Applies weighted confidence scoring (Local 80% + External 20%)
    - Enriches with geolocation data
 4. **💾 Caching**: Stores processed IOCs in Redis with keys:
-   - `preprocessed_iocs`: All processed IOCs
+   - `preprocessed_iocs`: All processed IOCs (incremental batches of 100)
    - `high_confidence_iocs`: IOCs with confidence ≥80%
+   - Cache updates after each batch, making IOCs available immediately
 
 ### 📊 TAXII Performance Benefits
 
@@ -341,59 +342,90 @@ The system includes an integrated background worker that automatically processes
 - **🎯 Respects Limits**: `limit` parameter properly applied without processing overhead
 - **🔒 No Blocking**: Heavy geolocation processing happens in background
 - **📈 Scalable**: Can handle 10,000+ IOCs without impacting API response times
+- **🔧 Elasticsearch Ready**: Dual format response with `objects` at root level for transforms
+- **🚀 Production Tested**: 400+ IOCs processed with full geolocation and correlation
 
-### 🔧 Manual Processing (Optional)
+### 🧪 Testing TAXII Endpoints
 
-For immediate processing outside the 5-minute cycle:
+Verify the system is working correctly:
 
 ```bash
-# Force immediate IOC preprocessing
-python bin/ioc_preprocessor.py
+# 📊 Test TAXII discovery
+curl http://localhost:52957/taxii2
+
+# 🔍 Test collections
+curl http://localhost:52957/taxii2/iocs/collections
+
+# ⚡ Test IOC retrieval with limit
+curl "http://localhost:52957/taxii2/iocs/collections/ioc-indicators/objects?limit=5" | jq '.objects | length'
+
+# 🎯 Test high confidence collection
+curl "http://localhost:52957/taxii2/iocs/collections/high-confidence-iocs/objects?limit=3" | jq '.objects[].confidence'
+
+# 📈 Check cache status
+redis-cli keys "*ioc*"
 ```
 
-# Disable auto-start on boot
-
-sudo systemctl disable abuseipdb-ioc-processor
-
-# View service logs
-
-sudo journalctl -u abuseipdb-ioc-processor -f
-
-````
-
-### 🔧 Manual Testing
-
-For development and testing, you can run the processor manually:
+### 🔧 System Status Verification
 
 ```bash
-# 🧪 Run processor manually (for testing)
-./scripts/start_processor.sh
+# ✅ Verify worker is running
+ps aux | grep "python.*main" | grep -v grep
 
-# Or run directly with Python
-python bin/startup_processor.py
-````
+# 📊 Check Redis cache
+redis-cli eval "local data = redis.call('get', 'preprocessed_iocs'); if data then local parsed = cjson.decode(data); return #parsed else return 0 end" 0
+
+# 🎯 Test Elasticsearch format
+curl -s "http://localhost:52957/taxii2/iocs/collections/ioc-indicators/objects?limit=1" | jq '.objects[0] | {ip: .["threat.indicator.ip"], confidence: .confidence, geo: .["threat.indicator.geo.location"]}'
+```
+
+### 🔧 Elasticsearch Integration
+
+The TAXII endpoints provide dual-format responses optimized for Elasticsearch Custom Threat Intelligence transforms:
+
+```json
+{
+  "more": false,
+  "data": {
+    "type": "bundle",
+    "objects": [...]  // TAXII 2.1 standard format
+  },
+  "objects": [...]    // Root level for Elasticsearch transforms
+}
+```
+
+**📊 Elasticsearch Compatible Fields:**
+
+- `threat.indicator.ip` - IP address
+- `threat.indicator.confidence` - Confidence score
+- `threat.indicator.geo.location` - Geographic coordinates
+- `x_elastic_provider` - Source provider
+- `x_elastic_dual_source` - Multi-source indicator
 
 ### ⚙️ Configuration
 
 The service behavior is controlled by environment variables:
 
 ```bash
-# Process IOCs every hour (3600 seconds)
-IOC_PROCESSING_INTERVAL=3600
+# Process IOCs every 5 minutes (300 seconds)
+IOC_PROCESSING_INTERVAL=300
 
-# Enable automatic startup processing
-AUTO_START_PROCESSING=true
+# Batch size for incremental processing
+IOC_BATCH_SIZE=100
+
+# Redis cache TTL (600 seconds = 10 minutes)
+REDIS_CACHE_TTL=600
 ```
 
-**🎯 Features:**
+**🎯 Production Features:**
 
-- ✅ **Automatic startup** - Processes IOCs when system starts
-- ✅ **Continuous processing** - Runs every hour (configurable)
-- ✅ **Redis caching** - 24-hour TTL for preprocessed IOCs
-- ✅ **Rate limiting** - Respects geolocation API limits
-- ✅ **Error recovery** - Automatically retries on failures
-- ✅ **Health monitoring** - System logs and statistics
-- ✅ **Sequential processing** - Avoids rate limit violations
+- ✅ **Incremental Processing** - IOCs available after each 100-item batch
+- ✅ **Distributed Locking** - Prevents concurrent processing conflicts
+- ✅ **Cache Persistence** - 10-minute TTL with continuous updates
+- ✅ **Rate Limiting** - 1-second delays for geolocation APIs
+- ✅ **Error Recovery** - Robust exception handling and retries
+- ✅ **Performance Monitoring** - Processing time and batch statistics
+- ✅ **Elasticsearch Ready** - Dual format responses for transforms
 
 ---
 

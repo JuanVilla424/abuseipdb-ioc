@@ -177,8 +177,14 @@ async def get_collection_objects(
                     logger.error(f"Error creating STIX bundle: {e}")
                     bundle = STIXExporter.create_bundle([])
 
-                # TAXII 2.1 envelope format
-                envelope = {"more": total_objects > limit if limit else False, "data": bundle}
+                # TAXII 2.1 envelope format (with objects at root level for Elasticsearch)
+                envelope = {
+                    "more": total_objects > limit if limit else False,
+                    "data": bundle,
+                    "objects": bundle.get(
+                        "objects", []
+                    ),  # Add objects at root for Elasticsearch transform
+                }
 
                 logger.info(
                     f"TAXII 2.1: Returned {len(bundle.get('objects', []))} of {total_objects} pre-processed objects from collection {collection_id}"
@@ -203,7 +209,13 @@ async def get_collection_objects(
                 "objects": [],
             }
 
-        envelope = {"more": False, "data": empty_bundle}
+        envelope = {
+            "more": False,
+            "data": empty_bundle,
+            "objects": empty_bundle.get(
+                "objects", []
+            ),  # Add objects at root for Elasticsearch transform
+        }
 
         return envelope
 
