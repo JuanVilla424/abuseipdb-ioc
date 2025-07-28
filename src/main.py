@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.core.config import settings, get_version
 from src.core.logging import setup_logging
 from src.api.endpoints import iocs, health, taxii
-from src.db.database import engine
+from src.db.database import engine, ensure_database_schema
 
 # Setup logging
 setup_logging()
@@ -18,6 +18,7 @@ setup_logging()
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
+    await ensure_database_schema()
     yield
     # Shutdown
     await engine.dispose()

@@ -125,6 +125,9 @@ $RECYCLE.BIN/
 *.swp
 *~
 
+# Redis database dump
+dump.rdb
+
 # IDE specific
 *.iml
 *.suo
