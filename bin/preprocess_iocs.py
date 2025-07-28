@@ -36,9 +36,11 @@ class IOCPreProcessor:
         self.abuseipdb_client = AbuseIPDBClient(settings.ABUSEIPDB_API_KEY)
 
     async def process_all_iocs(self, db: AsyncSession) -> Dict[str, Any]:
-        """Process all IOCs from database with enrichment."""
+        """Process all IOCs from local database and AbuseIPDB blacklist with enrichment."""
         stats = {
             "total": 0,
+            "local_iocs": 0,
+            "abuseipdb_iocs": 0,
             "processed": 0,
             "geo_enriched": 0,
             "cached": 0,
@@ -47,17 +49,76 @@ class IOCPreProcessor:
         }
 
         try:
-            # Get ALL IOCs from PostgreSQL
-            logger.info("Fetching all IOCs from reported_ips table...")
+            # 1️⃣ Get ALL IOCs from PostgreSQL (LOCAL SOURCE)
+            logger.info("Fetching local IOCs from reported_ips table...")
             query = select(ReportedIPs).order_by(ReportedIPs.reported_at.desc())
             result = await db.execute(query)
-            local_iocs = result.scalars().all()
-            stats["total"] = len(local_iocs)
-            logger.info(f"Found {stats['total']} IOCs to process")
+            local_db_iocs = result.scalars().all()
 
-            # Get existing enrichment data from cache
-            ip_addresses = [ioc.ip_address for ioc in local_iocs]
-            cache_query = select(AbuseIPDBCache).where(AbuseIPDBCache.ip_address.in_(ip_addresses))
+            # Convert local IOCs to standard format
+            local_iocs = []
+            for ioc in local_db_iocs:
+                local_iocs.append(
+                    {
+                        "ip_address": ioc.ip_address,
+                        "confidence": ioc.confidence,
+                        "reported_at": ioc.reported_at,
+                        "report_id": ioc.report_id,
+                        "categories": ioc.categories or [],
+                        "created_at": ioc.created_at,
+                        "source": "local",
+                    }
+                )
+            stats["local_iocs"] = len(local_iocs)
+            logger.info(f"Found {stats['local_iocs']} local IOCs")
+
+            # 2️⃣ Get IOCs from AbuseIPDB blacklist (EXTERNAL SOURCE)
+            logger.info("Fetching IOCs from AbuseIPDB blacklist...")
+            abuseipdb_iocs = []
+            try:
+                blacklist_response = await self.abuseipdb_client.get_blacklist(
+                    db=db,
+                    confidence_minimum=50,  # Confidence ≥50 as requested
+                    limit=10000,  # Maximum available
+                )
+
+                if blacklist_response.get("data"):
+                    for item in blacklist_response["data"]:
+                        # Avoid duplicates with local data
+                        ip_address = item.get("ipAddress")
+                        if not any(
+                            local_ioc["ip_address"] == ip_address for local_ioc in local_iocs
+                        ):
+                            abuseipdb_iocs.append(
+                                {
+                                    "ip_address": ip_address,
+                                    "confidence": item.get("abuseConfidenceScore", 50),
+                                    "reported_at": datetime.now(timezone.utc),
+                                    "report_id": f"ABUSEIPDB-{item.get('abuseConfidenceScore', 50)}",
+                                    "categories": ["abuseipdb-blacklist"],
+                                    "created_at": datetime.now(timezone.utc),
+                                    "source": "abuseipdb",
+                                }
+                            )
+                    stats["abuseipdb_iocs"] = len(abuseipdb_iocs)
+                    logger.info(f"Found {stats['abuseipdb_iocs']} unique AbuseIPDB blacklist IOCs")
+                else:
+                    logger.info("No AbuseIPDB blacklist data available (likely rate limited)")
+            except Exception as e:
+                logger.error(f"Error fetching AbuseIPDB blacklist: {e}")
+
+            # 3️⃣ Combine both sources
+            all_iocs = local_iocs + abuseipdb_iocs
+            stats["total"] = len(all_iocs)
+            logger.info(
+                f"Total IOCs to process: {stats['total']} (Local: {stats['local_iocs']}, AbuseIPDB: {stats['abuseipdb_iocs']})"
+            )
+
+            # Get existing enrichment data from cache for ALL IPs
+            all_ip_addresses = [ioc["ip_address"] for ioc in all_iocs]
+            cache_query = select(AbuseIPDBCache).where(
+                AbuseIPDBCache.ip_address.in_(all_ip_addresses)
+            )
             cache_result = await db.execute(cache_query)
             cached_enrichments = {e.ip_address: e for e in cache_result.scalars().all()}
 
@@ -65,26 +126,16 @@ class IOCPreProcessor:
             batch_size = 100
             processed_iocs = []
 
-            for i in range(0, len(local_iocs), batch_size):
-                batch = local_iocs[i : i + batch_size]
+            for i in range(0, len(all_iocs), batch_size):
+                batch = all_iocs[i : i + batch_size]
                 logger.info(f"Processing batch {i//batch_size + 1} ({len(batch)} IOCs)...")
 
                 for ioc in batch:
                     try:
-                        # Convert to dict
-                        local_data = {
-                            "ip_address": ioc.ip_address,
-                            "confidence": ioc.confidence,
-                            "reported_at": ioc.reported_at,
-                            "report_id": ioc.report_id,
-                            "categories": ioc.categories or [],
-                            "created_at": ioc.created_at,
-                        }
-
                         # Get cached enrichment if available
                         external_data = None
-                        if ioc.ip_address in cached_enrichments:
-                            cache = cached_enrichments[ioc.ip_address]
+                        if ioc["ip_address"] in cached_enrichments:
+                            cache = cached_enrichments[ioc["ip_address"]]
                             external_data = {
                                 "abuse_confidence_score": cache.abuse_confidence_score,
                                 "country_code": cache.country_code,
@@ -93,11 +144,19 @@ class IOCPreProcessor:
                                 "total_reports": cache.total_reports,
                                 "last_reported_at": cache.last_reported_at,
                             }
+                        # For AbuseIPDB blacklist items, they already have abuse confidence
+                        elif ioc.get("source") == "abuseipdb":
+                            external_data = {
+                                "abuse_confidence_score": ioc["confidence"],
+                                "country_code": None,
+                                "isp": None,
+                                "usage_type": None,
+                                "total_reports": 1,
+                                "last_reported_at": ioc["reported_at"],
+                            }
 
                         # Correlate
-                        correlated = self.correlation_engine.correlate_ioc(
-                            local_data, external_data
-                        )
+                        correlated = self.correlation_engine.correlate_ioc(ioc, external_data)
 
                         # Enrich with geolocation
                         enriched = await self.correlation_engine.enrich_with_geolocation(correlated)
@@ -109,7 +168,7 @@ class IOCPreProcessor:
                         stats["processed"] += 1
 
                     except Exception as e:
-                        logger.error(f"Error processing IOC {ioc.ip_address}: {e}")
+                        logger.error(f"Error processing IOC {ioc['ip_address']}: {e}")
                         stats["errors"] += 1
 
                 # Small delay to avoid overwhelming geo service
@@ -198,7 +257,9 @@ async def main():
         stats = await processor.process_all_iocs(db)
 
         logger.info("Pre-processing completed!")
-        logger.info(f"Total IOCs: {stats['total']}")
+        logger.info(
+            f"Total IOCs: {stats['total']} (Local: {stats['local_iocs']}, AbuseIPDB: {stats['abuseipdb_iocs']})"
+        )
         logger.info(f"Processed: {stats['processed']}")
         logger.info(f"Geo-enriched: {stats['geo_enriched']}")
         logger.info(f"Cached: {stats['cached']}")
