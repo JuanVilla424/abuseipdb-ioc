@@ -31,7 +31,7 @@ class AbuseIPDBCache(Base):
     total_reports = Column(Integer, default=0)
     num_distinct_users = Column(Integer, default=0)
     last_reported_at = Column(DateTime(timezone=True))
-    metadata = Column(JSONB, default=dict)
+    extra_data = Column(JSONB, default=dict)
     last_checked = Column(DateTime(timezone=True), server_default=func.current_timestamp())
     created_at = Column(DateTime(timezone=True), server_default=func.current_timestamp())
     updated_at = Column(

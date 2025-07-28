@@ -202,7 +202,7 @@ class AbuseIPDBClient:
                 cache_entry.total_reports = data.get("totalReports", 0)
                 cache_entry.num_distinct_users = data.get("numDistinctUsers", 0)
                 cache_entry.last_reported_at = data.get("lastReportedAt")
-                cache_entry.metadata = data
+                cache_entry.extra_data = data
                 cache_entry.last_checked = datetime.utcnow()
             else:
                 # Create new entry
@@ -216,7 +216,7 @@ class AbuseIPDBClient:
                     total_reports=data.get("totalReports", 0),
                     num_distinct_users=data.get("numDistinctUsers", 0),
                     last_reported_at=data.get("lastReportedAt"),
-                    metadata=data,
+                    extra_data=data,
                 )
                 db.add(cache_entry)
 

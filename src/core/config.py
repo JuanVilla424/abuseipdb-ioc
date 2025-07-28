@@ -5,8 +5,27 @@ This module handles all configuration settings using pydantic-settings
 for environment variable management and validation.
 """
 
+import os
+import tomllib
+from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def get_version() -> str:
+    """Read version from pyproject.toml dynamically."""
+    try:
+        # Get the project root directory
+        project_root = Path(__file__).parent.parent.parent
+        pyproject_path = project_root / "pyproject.toml"
+
+        if pyproject_path.exists():
+            with open(pyproject_path, "rb") as f:
+                data = tomllib.load(f)
+                return data.get("tool", {}).get("poetry", {}).get("version", "1.0.0")
+        return "1.0.0"
+    except Exception:
+        return "1.0.0"
 
 
 class Settings(BaseSettings):
