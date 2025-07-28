@@ -85,6 +85,15 @@ class IOCCorrelationEngine:
             Freshness score (0.0-1.0), where 1.0 is most recent
         """
         reference_time = last_seen or datetime.now(timezone.utc)
+
+        # Handle both timezone-aware and naive datetimes
+        if reported_at.tzinfo is None:
+            # If reported_at is naive, assume UTC
+            reported_at = reported_at.replace(tzinfo=timezone.utc)
+
+        if reference_time.tzinfo is None:
+            reference_time = reference_time.replace(tzinfo=timezone.utc)
+
         age_days = (reference_time - reported_at).days
 
         # Freshness decay curve
@@ -195,13 +204,21 @@ class IOCCorrelationEngine:
         stix_labels = self.map_categories_to_stix(categories)
 
         # Build correlated IOC
+        # Handle datetime serialization
+        reported_at_str = None
+        if reported_at:
+            # Ensure timezone-aware for serialization
+            if hasattr(reported_at, "tzinfo") and reported_at.tzinfo is None:
+                reported_at = reported_at.replace(tzinfo=timezone.utc)
+            reported_at_str = reported_at.isoformat()
+
         correlated_ioc = {
             "ip_address": ip_address,
             "confidence": final_confidence,
             "local_confidence": local_confidence,
             "external_confidence": external_confidence,
             "freshness_score": freshness_score,
-            "reported_at": reported_at.isoformat() if reported_at else None,
+            "reported_at": reported_at_str,
             "categories": categories,
             "stix_labels": stix_labels,
             "source_priority": "local_primary",
