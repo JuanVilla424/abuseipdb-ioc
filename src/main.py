@@ -2,6 +2,7 @@
 Main FastAPI application.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,18 +10,38 @@ from src.core.config import settings, get_version
 from src.core.logging import setup_logging
 from src.api.endpoints import iocs, health, taxii
 from src.db.database import engine, ensure_database_schema
+from src.workers.ioc_processor import ioc_processor
 
 # Setup logging
 setup_logging()
+
+# Global task for IOC processor
+ioc_processor_task = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
+    global ioc_processor_task
+
     # Startup
     await ensure_database_schema()
+
+    # Start IOC processor in background
+    ioc_processor_task = asyncio.create_task(ioc_processor.start())
+
     yield
+
     # Shutdown
+    # Stop IOC processor
+    if ioc_processor_task:
+        await ioc_processor.stop()
+        ioc_processor_task.cancel()
+        try:
+            await ioc_processor_task
+        except asyncio.CancelledError:
+            pass
+
     await engine.dispose()
 
 

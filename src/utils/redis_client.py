@@ -75,8 +75,13 @@ class RedisIOCCache:
             cached_data = await self._redis.get(key)
             if cached_data:
                 data = json.loads(cached_data)
-                logger.info(f"Retrieved {len(data.get('iocs', []))} IOCs from Redis cache")
-                return data.get("iocs", [])
+                # Support both formats: wrapped and direct list
+                if isinstance(data, dict) and "iocs" in data:
+                    logger.info(f"Retrieved {len(data.get('iocs', []))} IOCs from Redis cache")
+                    return data.get("iocs", [])
+                elif isinstance(data, list):
+                    logger.info(f"Retrieved {len(data)} IOCs from Redis cache")
+                    return data
         except Exception as e:
             logger.error(f"Redis get error: {e}")
 
@@ -116,6 +121,37 @@ class RedisIOCCache:
 
         except Exception as e:
             logger.error(f"Redis set error: {e}")
+            return False
+
+    async def cache_iocs(
+        self,
+        iocs: List[Dict[str, Any]],
+        key: str = "preprocessed_iocs",
+        ttl: int = 600,  # 10 minutes
+    ) -> bool:
+        """
+        Store preprocessed IOCs in Redis cache (direct list format).
+
+        Args:
+            iocs: List of IOC dictionaries
+            key: Cache key name
+            ttl: Time to live in seconds
+
+        Returns:
+            bool: True if stored successfully, False if error
+        """
+        if not self._redis:
+            logger.warning("Redis not connected, cannot cache IOCs")
+            return False
+
+        try:
+            # Store as direct list for preprocessed IOCs
+            await self._redis.setex(key, ttl, json.dumps(iocs, cls=DateTimeEncoder))
+            logger.info(f"Cached {len(iocs)} preprocessed IOCs in Redis with {ttl}s TTL")
+            return True
+
+        except Exception as e:
+            logger.error(f"Redis cache error: {e}")
             return False
 
     async def get_cache_info(self, key: str = "blacklist_iocs") -> Optional[Dict[str, Any]]:

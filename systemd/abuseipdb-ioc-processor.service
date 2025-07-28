@@ -1,0 +1,32 @@
+[Unit]
+Description=AbuseIPDB IOC Enhancement Wrapper - Automatic Processing Service
+Documentation=https://github.com/na0nh/abuseipdb-ioc
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=na0nh
+Group=na0nh
+WorkingDirectory=/home/na0nh/Projects/abuseipdb-ioc
+Environment=PATH=/home/na0nh/Projects/abuseipdb-ioc/venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/home/na0nh/Projects/abuseipdb-ioc/.env
+ExecStart=/home/na0nh/Projects/abuseipdb-ioc/venv/bin/python /home/na0nh/Projects/abuseipdb-ioc/bin/startup_processor.py
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=abuseipdb-ioc-processor
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/na0nh/Projects/abuseipdb-ioc/logs
+
+# Resource limits
+MemoryLimit=1G
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
