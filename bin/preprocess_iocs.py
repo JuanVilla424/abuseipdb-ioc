@@ -130,8 +130,9 @@ class IOCPreProcessor:
                 batch = all_iocs[i : i + batch_size]
                 logger.info(f"Processing batch {i//batch_size + 1} ({len(batch)} IOCs)...")
 
-                for ioc in batch:
+                for batch_idx, ioc in enumerate(batch):
                     try:
+
                         # Get cached enrichment if available
                         external_data = None
                         if ioc["ip_address"] in cached_enrichments:
@@ -168,7 +169,11 @@ class IOCPreProcessor:
                         stats["processed"] += 1
 
                     except Exception as e:
-                        logger.error(f"Error processing IOC {ioc['ip_address']}: {e}")
+                        # Handle case where ioc might not be a dictionary
+                        ip_address = (
+                            ioc.get("ip_address", "unknown") if isinstance(ioc, dict) else str(ioc)
+                        )
+                        logger.error(f"Error processing IOC {ip_address}: {e}")
                         stats["errors"] += 1
 
                 # Small delay to avoid overwhelming geo service

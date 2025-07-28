@@ -309,8 +309,15 @@ class IOCCorrelationEngine:
 
         threat_types = []
         for cat in categories:
-            cat_id = cat if isinstance(cat, int) else cat.get("id", cat)
-            if cat_id in category_to_threat:
+            if isinstance(cat, int):
+                cat_id = cat
+            elif isinstance(cat, dict):
+                cat_id = cat.get("id", cat)
+            else:
+                # cat is a string (like "abuseipdb-blacklist"), try to convert to int
+                cat_id = int(cat) if str(cat).isdigit() else None
+
+            if cat_id and cat_id in category_to_threat:
                 threat_types.append(category_to_threat[cat_id])
 
         return list(set(threat_types))  # Remove duplicates
@@ -330,8 +337,15 @@ class IOCCorrelationEngine:
 
         phases = []
         for cat in categories:
-            cat_id = cat if isinstance(cat, int) else cat.get("id", cat)
-            if cat_id in category_to_killchain:
+            if isinstance(cat, int):
+                cat_id = cat
+            elif isinstance(cat, dict):
+                cat_id = cat.get("id", cat)
+            else:
+                # cat is a string (like "abuseipdb-blacklist"), try to convert to int
+                cat_id = int(cat) if str(cat).isdigit() else None
+
+            if cat_id and cat_id in category_to_killchain:
                 phases.append(category_to_killchain[cat_id])
 
         return list(set(phases))  # Remove duplicates
