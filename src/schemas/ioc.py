@@ -49,17 +49,32 @@ class EnrichmentData(BaseModel):
 
 
 class CorrelatedIOC(IOCBase):
-    """Schema for correlated IOC with enrichment."""
+    """Standard IOC schema following industry best practices."""
 
-    local_confidence: int
-    external_confidence: Optional[int] = None
-    freshness_score: float = Field(..., ge=0, le=1)
-    reported_at: datetime
-    categories: List[Any] = Field(default_factory=list)
-    stix_labels: List[str] = Field(default_factory=list)
-    source_priority: str = "local_primary"
-    enrichment: EnrichmentData
-    report_id: Optional[str] = None
+    # Core IOC fields
+    reported_at: datetime = Field(..., description="When the IOC was first reported")
+    categories: List[Any] = Field(default_factory=list, description="Threat categories")
+    report_id: Optional[str] = Field(None, description="Source report identifier")
+
+    # Confidence scoring (industry standard 0-100)
+    local_confidence: Optional[int] = Field(
+        None, ge=0, le=100, description="Local confidence score"
+    )
+    external_confidence: Optional[int] = Field(
+        None, ge=0, le=100, description="External source confidence"
+    )
+
+    # Freshness and priority (standard threat intel fields)
+    freshness_score: Optional[float] = Field(None, ge=0, le=1, description="IOC freshness score")
+    source_priority: Optional[str] = Field(None, description="Source priority classification")
+
+    # Standard STIX labels for interoperability
+    labels: List[str] = Field(
+        default_factory=lambda: ["malicious-activity"], description="STIX 2.1 compliant labels"
+    )
+
+    # Enrichment data
+    enrichment: Optional[EnrichmentData] = None
 
 
 class IOCListResponse(BaseModel):
@@ -69,6 +84,17 @@ class IOCListResponse(BaseModel):
     items: List[CorrelatedIOC]
     page: int = 1
     page_size: int = 100
+
+
+class STIXBundleResponse(BaseModel):
+    """Response schema for STIX bundle format."""
+
+    type: str = "bundle"
+    id: str
+    spec_version: str = "2.1"
+    created: datetime
+    modified: datetime
+    objects: List[dict]
 
 
 class BulkCheckRequest(BaseModel):
