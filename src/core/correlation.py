@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from src.core.config import settings
-from src.utils.geolocation import enrich_with_geolocation
+from src.utils.geolocation import geolocation_service
 from src.schemas.ioc import GeolocationData, ProviderData
 
 logger = logging.getLogger(__name__)
@@ -373,10 +373,20 @@ class IOCCorrelationEngine:
         return list(set(phases))  # Remove duplicates
 
     async def enrich_with_geolocation(self, correlated_ioc: Dict[str, Any]) -> Dict[str, Any]:
-        """Enrich IOC with geolocation data."""
+        """Enrich IOC with geolocation data using global service instance."""
         try:
-            geo_data = await enrich_with_geolocation(correlated_ioc["ip_address"])
+            geo_data = await geolocation_service.get_geolocation(correlated_ioc["ip_address"])
             if geo_data:
+                # Add threat level assessment
+                country_code = geo_data.get("country_code")
+                if country_code:
+                    geo_data["threat_level"] = geolocation_service.get_country_threat_level(
+                        country_code
+                    )
+
+                # Add timestamp
+                geo_data["enriched_at"] = datetime.now(timezone.utc).isoformat()
+
                 # Convert to GeolocationData format
                 geolocation = {
                     "country_code": geo_data.get("country_code"),
@@ -386,6 +396,9 @@ class IOCCorrelationEngine:
                     "latitude": geo_data.get("latitude"),
                     "longitude": geo_data.get("longitude"),
                     "continent": geo_data.get("continent"),
+                    "threat_level": geo_data.get("threat_level"),
+                    "source": geo_data.get("source"),
+                    "enriched_at": geo_data.get("enriched_at"),
                 }
 
                 correlated_ioc["enrichment"]["geolocation"] = geolocation
