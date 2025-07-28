@@ -6,7 +6,7 @@ This module provides async integration with AbuseIPDB API v2 for IP enrichment.
 
 import asyncio
 import logging
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import Optional, Dict, Any, List
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -103,7 +103,7 @@ class AbuseIPDBClient:
         Returns:
             Cached data if available and fresh, None otherwise
         """
-        cutoff_time = datetime.utcnow() - timedelta(hours=cache_ttl_hours)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=cache_ttl_hours)
 
         stmt = (
             select(AbuseIPDBCache)
@@ -203,7 +203,7 @@ class AbuseIPDBClient:
                 cache_entry.num_distinct_users = data.get("numDistinctUsers", 0)
                 cache_entry.last_reported_at = data.get("lastReportedAt")
                 cache_entry.extra_data = data
-                cache_entry.last_checked = datetime.utcnow()
+                cache_entry.last_checked = datetime.now(timezone.utc)
             else:
                 # Create new entry
                 cache_entry = AbuseIPDBCache(

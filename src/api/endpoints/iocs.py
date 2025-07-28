@@ -5,7 +5,7 @@ Provides REST API for querying and enriching IOCs.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,7 +52,7 @@ async def get_iocs(
 
         # Apply freshness filter if requested
         if fresh_only:
-            seven_days_ago = datetime.utcnow() - timedelta(days=7)
+            seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
             query = query.where(ReportedIPs.reported_at >= seven_days_ago)
 
         # Apply confidence filter
@@ -251,22 +251,22 @@ async def export_iocs(
     if format == "json":
         content = ExportFormatters.to_json(iocs)
         media_type = "application/json"
-        filename = f"iocs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+        filename = f"iocs_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
 
     elif format == "stix":
         content = STIXExporter.create_bundle(iocs)
         media_type = "application/json"
-        filename = f"iocs_stix_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+        filename = f"iocs_stix_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
 
     elif format == "csv":
         content = ExportFormatters.to_csv(iocs)
         media_type = "text/csv"
-        filename = f"iocs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+        filename = f"iocs_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
 
     else:  # txt
         content = ExportFormatters.to_txt(iocs, include_metadata=True)
         media_type = "text/plain"
-        filename = f"iocs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.txt"
+        filename = f"iocs_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.txt"
 
     return Response(
         content=content,

@@ -4,7 +4,7 @@ STIX 2.x export functionality.
 Converts correlated IOCs to STIX 2.1 format for SIEM integration.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import stix2
 
@@ -53,8 +53,8 @@ class STIXExporter:
             pattern_type="stix",
             labels=ioc.get("stix_labels", ["malicious-activity"]),
             confidence=ioc.get("confidence", 75),
-            created=ioc.get("reported_at", datetime.utcnow()),
-            modified=datetime.utcnow(),
+            created=ioc.get("reported_at", datetime.now(timezone.utc)),
+            modified=datetime.now(timezone.utc),
             custom_properties=custom_properties,
             allow_custom=True,
         )
