@@ -16,10 +16,15 @@ logger = logging.getLogger(__name__)
 
 
 class GeolocationService:
-    """IP Geolocation service with multiple providers."""
+    """IP Geolocation service with multiple providers and dynamic rate limiting."""
 
     def __init__(self):
         self.timeout = 10.0
+        self.base_delay = 1.0  # Base delay in seconds
+        self.max_delay = 30.0  # Maximum delay in seconds
+        self.current_delay = self.base_delay
+        self.consecutive_errors = 0
+        self.last_success_time = None
 
     async def get_geolocation(self, ip_address: str) -> Optional[Dict[str, Any]]:
         """
@@ -46,16 +51,25 @@ class GeolocationService:
 
         for service in services:
             try:
+                # Apply dynamic delay before making the request
+                await asyncio.sleep(self.current_delay)
+
                 result = await service(ip_address)
                 if result:
                     logger.info(f"Geolocation found for {ip_address} via {service.__name__}")
-                    # Add 1-second delay to be respectful to API limits
-                    await asyncio.sleep(1.0)
+                    # Success: reduce delay and reset error counter
+                    self._handle_success()
                     return result
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:  # Rate limit exceeded
+                    self._handle_rate_limit_error(service.__name__)
+                    logger.warning(f"Rate limit hit for {service.__name__}, backing off...")
+                    continue
+                else:
+                    self._handle_error(service.__name__, str(e))
+                    continue
             except Exception as e:
-                logger.warning(
-                    f"Geolocation service {service.__name__} failed for {ip_address}: {e}"
-                )
+                self._handle_error(service.__name__, str(e))
                 continue
 
         logger.warning(f"No geolocation data found for {ip_address}")
@@ -154,6 +168,36 @@ class GeolocationService:
             return "medium"
         else:
             return "low"
+
+    def _handle_success(self):
+        """Handle successful geolocation request."""
+        self.consecutive_errors = 0
+        self.last_success_time = datetime.now(timezone.utc)
+        # Gradually reduce delay on success (exponential decay)
+        self.current_delay = max(self.base_delay, self.current_delay * 0.9)
+        if self.current_delay > self.base_delay:
+            logger.debug(f"Reduced geolocation delay to {self.current_delay:.2f}s")
+
+    def _handle_error(self, service_name: str, error_msg: str):
+        """Handle geolocation request error."""
+        self.consecutive_errors += 1
+        logger.warning(f"Geolocation service {service_name} failed: {error_msg}")
+
+        # Increase delay on consecutive errors (exponential backoff)
+        if self.consecutive_errors >= 3:
+            self.current_delay = min(self.max_delay, self.current_delay * 1.5)
+            logger.warning(
+                f"Increased geolocation delay to {self.current_delay:.2f}s due to consecutive errors"
+            )
+
+    def _handle_rate_limit_error(self, service_name: str):
+        """Handle rate limit error with aggressive backoff."""
+        self.consecutive_errors += 1
+        # More aggressive backoff for rate limits
+        self.current_delay = min(self.max_delay, self.current_delay * 2.0)
+        logger.warning(
+            f"Rate limit detected for {service_name}, increased delay to {self.current_delay:.2f}s"
+        )
 
 
 # Global geolocation service instance

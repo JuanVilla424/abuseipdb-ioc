@@ -298,23 +298,41 @@ class AbuseIPDBClient:
         confidence_minimum: int = 75,
         limit: int = 100,
         daily_limit: int = None,
+        force_refresh: bool = False,
     ) -> Dict[str, Any]:
         """
-        Get blacklisted IPs from AbuseIPDB with daily limit tracking.
+        Get blacklisted IPs from AbuseIPDB with daily limit tracking and caching.
 
         Args:
             db: Database session for tracking usage
             confidence_minimum: Minimum confidence score (25-100)
             limit: Maximum IPs to return (max 10000)
             daily_limit: Maximum blacklist calls per day (uses config if None)
+            force_refresh: Force API call even if cached data exists
 
         Returns:
             API response with blacklisted IPs
         """
         from src.core.config import settings
+        from src.utils.redis_client import get_redis_cache
 
         if daily_limit is None:
             daily_limit = settings.ABUSEIPDB_DAILY_LIMIT
+
+        # Check Redis cache first (unless force refresh)
+        if not force_refresh:
+            try:
+                redis_cache = await get_redis_cache()
+                if redis_cache:
+                    cache_key = f"abuseipdb_blacklist_c{confidence_minimum}_l{limit}"
+                    cached_data = await redis_cache.get(cache_key)
+                    if cached_data:
+                        logger.info(
+                            f"Using cached AbuseIPDB blacklist data (confidence≥{confidence_minimum})"
+                        )
+                        return cached_data
+            except Exception as e:
+                logger.warning(f"Redis cache error: {e}")
 
         # Check if we've exceeded daily blacklist limit
         today = date.today()
@@ -327,7 +345,9 @@ class AbuseIPDBClient:
             current_blacklist_requests = getattr(usage, "blacklist_requests", 0) or 0
 
         if current_blacklist_requests >= daily_limit:
-            logger.warning(f"Daily blacklist limit ({daily_limit}) reached")
+            logger.warning(
+                f"Daily blacklist limit ({daily_limit}) reached. Used: {current_blacklist_requests}/{daily_limit}"
+            )
             return {"data": []}
 
         params = {
@@ -345,7 +365,21 @@ class AbuseIPDBClient:
                 # Update blacklist usage counter
                 await self._increment_blacklist_usage(db)
 
-                return response.json()
+                response_data = response.json()
+
+                # Cache the response for 1 hour to prevent multiple API calls
+                try:
+                    redis_cache = await get_redis_cache()
+                    if redis_cache:
+                        cache_key = f"abuseipdb_blacklist_c{confidence_minimum}_l{limit}"
+                        await redis_cache.set(cache_key, response_data, ttl=3600)  # 1 hour cache
+                        logger.info(
+                            f"Cached AbuseIPDB blacklist data for 1 hour (confidence≥{confidence_minimum})"
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to cache blacklist data: {e}")
+
+                return response_data
 
     async def _increment_blacklist_usage(self, db: AsyncSession) -> None:
         """Increment blacklist usage counter."""
