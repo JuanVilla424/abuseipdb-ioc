@@ -139,10 +139,6 @@ class STIXExporter:
             "x_elastic_dual_source": ioc_data.get("dual_source", False),
             "x_elastic_local_confidence": ioc_data.get("local_confidence", 0),
             "x_elastic_external_confidence": ioc_data.get("external_confidence", 0),
-            # ECS event categorization
-            "event.category": "threat",
-            "event.type": ["indicator"],
-            "event.kind": "enrichment",
             # Core threat.indicator ECS fields
             "threat.indicator.type": "ipv4-addr",
             "threat.indicator.first_seen": valid_from_date.isoformat(),
@@ -249,6 +245,15 @@ class STIXExporter:
         # Filter out None values from custom properties
         custom_properties = {k: v for k, v in custom_properties.items() if v is not None}
         indicator.update(custom_properties)
+
+        # Add ECS event fields as root-level properties (not part of STIX indicator)
+        indicator.update(
+            {
+                "event.category": "threat",
+                "event.type": ["indicator"],
+                "event.kind": "enrichment",
+            }
+        )
 
         return indicator
 
