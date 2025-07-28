@@ -48,7 +48,7 @@ class APIUsageTracking(Base):
     """
     Track AbuseIPDB API usage for rate limiting.
 
-    Ensures we stay within the free tier limit of 1,000 requests/day.
+    Ensures we stay within limits and track different types of calls.
     """
 
     __tablename__ = "api_usage_tracking"
@@ -58,6 +58,8 @@ class APIUsageTracking(Base):
     requests_count = Column(Integer, default=0)
     successful_requests = Column(Integer, default=0)
     failed_requests = Column(Integer, default=0)
+    blacklist_requests = Column(Integer, default=0)  # Track blacklist API calls
+    redis_updates = Column(Integer, default=0)  # Track Redis cache updates
     created_at = Column(DateTime(timezone=True), server_default=func.current_timestamp())
     updated_at = Column(
         DateTime(timezone=True),
