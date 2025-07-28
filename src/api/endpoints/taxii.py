@@ -146,12 +146,47 @@ async def get_collection_objects(
     min_confidence = 80 if collection_id == "high-confidence-iocs" else 0
 
     try:
+        # Check for pre-processed IOCs in Redis first
+        from src.utils.redis_client import get_redis_cache
+
+        redis_cache = await get_redis_cache()
+
+        if redis_cache:
+            cached_iocs = await redis_cache.get_iocs(key="preprocessed_iocs")
+            if cached_iocs:
+                logger.info(f"Using {len(cached_iocs)} pre-processed IOCs from cache")
+
+                # Filter by confidence if needed
+                if min_confidence:
+                    cached_iocs = [
+                        ioc for ioc in cached_iocs if ioc.get("confidence", 0) >= min_confidence
+                    ]
+
+                # Apply limit only for TAXII response
+                total_objects = len(cached_iocs)
+                paginated_objects = cached_iocs[:limit] if limit else cached_iocs
+
+                # Create STIX bundle
+                bundle = STIXExporter.create_bundle(paginated_objects)
+
+                # TAXII 2.1 envelope format
+                envelope = {"more": total_objects > limit if limit else False, "data": bundle}
+
+                logger.info(
+                    f"TAXII 2.1: Returned {len(bundle['objects'])} of {total_objects} pre-processed objects from collection {collection_id}"
+                )
+
+                return envelope
+
+        # Fallback to real-time processing if no cache
+        logger.info("No pre-processed cache found, processing in real-time...")
+
         # Initialize services
         correlation_engine = IOCCorrelationEngine()
         abuseipdb_client = AbuseIPDBClient(settings.ABUSEIPDB_API_KEY)
 
-        # Get IOCs directly from PostgreSQL tables
-        query = select(ReportedIPs).limit(limit)
+        # Get ALL IOCs from PostgreSQL tables (NO LIMIT!)
+        query = select(ReportedIPs)
         if min_confidence:
             query = query.where(ReportedIPs.confidence >= min_confidence)
         query = query.order_by(ReportedIPs.reported_at.desc())
@@ -208,17 +243,21 @@ async def get_collection_objects(
                 logger.error(f"TAXII correlation failed for {ip_address}: {e}")
                 correlated.append(local_ioc)
 
-        # Create STIX bundle
-        bundle = STIXExporter.create_bundle(correlated)
+        # Apply limit only for TAXII response (not for DB query!)
+        total_objects = len(correlated)
+        paginated_objects = correlated[:limit] if limit else correlated
+
+        # Create STIX bundle with paginated objects
+        bundle = STIXExporter.create_bundle(paginated_objects)
 
         # TAXII 2.1 envelope format (correcto según especificación)
         envelope = {
-            "more": len(correlated) >= limit,  # Indicates if more objects are available
+            "more": total_objects > limit if limit else False,  # More objects available?
             "data": bundle,  # Bundle completo con objects dentro
         }
 
         logger.info(
-            f"TAXII 2.1: Returned {len(bundle['objects'])} objects from collection {collection_id}"
+            f"TAXII 2.1: Returned {len(bundle['objects'])} of {total_objects} total objects from collection {collection_id}"
         )
 
         return envelope
