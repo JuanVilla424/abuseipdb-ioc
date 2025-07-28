@@ -4,6 +4,7 @@ IP Geolocation utilities using multiple sources.
 Provides geolocation services with fallback options and caching.
 """
 
+import asyncio
 import logging
 import json
 from typing import Optional, Dict, Any
@@ -48,6 +49,8 @@ class GeolocationService:
                 result = await service(ip_address)
                 if result:
                     logger.info(f"Geolocation found for {ip_address} via {service.__name__}")
+                    # Add 1-second delay to be respectful to API limits
+                    await asyncio.sleep(1.0)
                     return result
             except Exception as e:
                 logger.warning(
