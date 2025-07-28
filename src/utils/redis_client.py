@@ -20,16 +20,14 @@ logger = logging.getLogger(__name__)
 class RedisIOCCache:
     """Redis cache for IOC data with daily update limits."""
 
-    def __init__(self, redis_url: str, daily_update_limit: int = 10):
+    def __init__(self, redis_url: str):
         """
         Initialize Redis cache client.
 
         Args:
             redis_url: Redis connection URL
-            daily_update_limit: Maximum cache updates per day
         """
         self.redis_url = redis_url
-        self.daily_update_limit = daily_update_limit
         self._redis: Optional[redis.Redis] = None
 
     async def connect(self):
@@ -49,42 +47,6 @@ class RedisIOCCache:
         if self._redis:
             await self._redis.close()
             self._redis = None
-
-    async def check_update_limit(self, db: AsyncSession) -> bool:
-        """
-        Check if we can perform more Redis updates today.
-
-        Args:
-            db: Database session for tracking usage
-
-        Returns:
-            bool: True if updates allowed, False if limit reached
-        """
-        today = date.today()
-        stmt = select(APIUsageTracking).where(APIUsageTracking.date == today)
-        result = await db.execute(stmt)
-        usage = result.scalar_one_or_none()
-
-        if not usage:
-            return True
-
-        return (usage.redis_updates or 0) < self.daily_update_limit
-
-    async def _increment_update_counter(self, db: AsyncSession) -> None:
-        """Increment Redis update counter."""
-        today = date.today()
-
-        stmt = select(APIUsageTracking).where(APIUsageTracking.date == today)
-        result = await db.execute(stmt)
-        usage = result.scalar_one_or_none()
-
-        if not usage:
-            usage = APIUsageTracking(date=today, requests_count=0, redis_updates=1)
-            db.add(usage)
-        else:
-            usage.redis_updates = (usage.redis_updates or 0) + 1
-
-        await db.commit()
 
     async def get_iocs(self, key: str = "blacklist_iocs") -> Optional[List[Dict[str, Any]]]:
         """
@@ -112,30 +74,23 @@ class RedisIOCCache:
 
     async def set_iocs(
         self,
-        db: AsyncSession,
         iocs: List[Dict[str, Any]],
         key: str = "blacklist_iocs",
         ttl: int = 86400,  # 24 hours
     ) -> bool:
         """
-        Store IOCs in Redis cache with update limit check.
+        Store IOCs in Redis cache.
 
         Args:
-            db: Database session for tracking usage
             iocs: List of IOC dictionaries
             key: Cache key name
             ttl: Time to live in seconds
 
         Returns:
-            bool: True if stored successfully, False if limit reached or error
+            bool: True if stored successfully, False if error
         """
         if not self._redis:
             logger.warning("Redis not connected, cannot cache IOCs")
-            return False
-
-        # Check daily update limit
-        if not await self.check_update_limit(db):
-            logger.warning(f"Daily Redis update limit ({self.daily_update_limit}) reached")
             return False
 
         try:
@@ -146,8 +101,6 @@ class RedisIOCCache:
             }
 
             await self._redis.setex(key, ttl, json.dumps(cache_data))
-            await self._increment_update_counter(db)
-
             logger.info(f"Cached {len(iocs)} IOCs in Redis with {ttl}s TTL")
             return True
 
@@ -216,7 +169,7 @@ async def get_redis_cache() -> Optional[RedisIOCCache]:
         return None
 
     if not redis_cache:
-        redis_cache = RedisIOCCache(settings.REDIS_URL, settings.ABUSEIPDB_DAILY_UPDATE_LIMIT)
+        redis_cache = RedisIOCCache(settings.REDIS_URL)
         await redis_cache.connect()
 
     return redis_cache

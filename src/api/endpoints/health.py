@@ -31,7 +31,7 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> APIHealth:
         "abuseipdb": True,  # Assume healthy unless we check
         "timestamp": datetime.now(timezone.utc),
         "daily_requests_used": 0,
-        "daily_requests_limit": settings.ABUSEIPDB_RATE_LIMIT,
+        "daily_requests_limit": settings.ABUSEIPDB_DAILY_LIMIT,
     }
 
     # Check database connectivity
@@ -103,7 +103,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)) -> Dict[str, Any]:
                     "successful_requests": usage_stats.successful_requests or 0,
                     "failed_requests": usage_stats.failed_requests or 0,
                 },
-                "daily_limit": settings.ABUSEIPDB_RATE_LIMIT,
+                "daily_limit": settings.ABUSEIPDB_DAILY_LIMIT,
             },
         }
 

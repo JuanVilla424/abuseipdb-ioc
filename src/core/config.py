@@ -45,9 +45,7 @@ class Settings(BaseSettings):
     # AbuseIPDB Configuration
     ABUSEIPDB_API_KEY: str
     ABUSEIPDB_CONFIDENCE_MINIMUM: int = 75
-    ABUSEIPDB_RATE_LIMIT: int = 1000
-    ABUSEIPDB_DAILY_BLACKLIST_LIMIT: int = 10  # Max blacklist calls per day
-    ABUSEIPDB_DAILY_UPDATE_LIMIT: int = 10  # Max Redis updates per day
+    ABUSEIPDB_DAILY_LIMIT: int = 10  # Max AbuseIPDB API calls per day (auto-saves to Redis)
 
     # IOC Scoring Weights
     LOCAL_CONFIDENCE_WEIGHT: float = 0.7

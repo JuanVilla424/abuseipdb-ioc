@@ -91,6 +91,6 @@ class TestIOCCorrelationEngine:
         assert result["confidence"] == 85  # Boosted
         assert result["local_confidence"] == 80
         assert result["external_confidence"] == 70
-        assert result["enrichment"]["country_code"] == "US"
+        assert result["enrichment"]["providers"][0]["name"] == "AbuseIPDB"
         assert result["source_priority"] == "local_primary"
-        assert "malicious-activity" in result["stix_labels"]
+        assert "malicious-activity" in result["labels"]
