@@ -66,9 +66,8 @@ class IOCCorrelationEngine:
             abuseipdb_confidence * self.external_weight
         )
 
-        # Apply boost for high-confidence local detections
-        if local_confidence >= 75:
-            weighted_score = max(weighted_score, 85)
+        # For dual sources, use the weighted score directly without boost
+        # The boost is only for single-source high-confidence local detections
 
         # Ensure score is within valid range
         return min(int(weighted_score), 100)
@@ -196,6 +195,10 @@ class IOCCorrelationEngine:
             country_code = external_data.get("country_code")
             isp = external_data.get("isp")
 
+        # Check for dual source first to get correct external confidence
+        if local_data.get("dual_source") and local_data.get("abuseipdb_data"):
+            external_confidence = local_data["abuseipdb_data"]["confidence"]
+
         # Calculate weighted confidence
         final_confidence = self.calculate_weighted_confidence(local_confidence, external_confidence)
 
@@ -226,7 +229,29 @@ class IOCCorrelationEngine:
 
         # Build provider information
         providers = []
-        if external_data:
+
+        # Always add local source (since this is primary)
+        providers.append(
+            {
+                "name": "Local Detection",
+                "source": "local",
+                "confidence": local_confidence,
+                "reference_url": f"internal://report/{local_data.get('report_id', 'unknown')}",
+            }
+        )
+
+        # Check for dual source (both local and AbuseIPDB)
+        if local_data.get("dual_source") and local_data.get("abuseipdb_data"):
+            abuseipdb_data = local_data["abuseipdb_data"]
+            providers.append(
+                {
+                    "name": "AbuseIPDB",
+                    "source": "abuseipdb",
+                    "confidence": abuseipdb_data["confidence"],
+                    "reference_url": f"https://www.abuseipdb.com/check/{ip_address}",
+                }
+            )
+        elif external_data:
             providers.append(
                 {
                     "name": "AbuseIPDB",
@@ -238,26 +263,21 @@ class IOCCorrelationEngine:
                 }
             )
 
-        # Always include local provider
-        providers.append(
-            {
-                "name": "Local Detection",
-                "source": "reported_ips",
-                "confidence": local_confidence,
-                "first_seen": reported_at_str,
-                "last_seen": reported_at_str,
-            }
-        )
-
         # Map categories to threat types and kill chain phases
         threat_types = self._map_categories_to_threat_types(categories)
         kill_chain_phases = self._map_categories_to_kill_chain(categories)
+
+        # Determine primary provider and source info
+        primary_provider = "Local Detection"
+        source_info = local_data.get("source", "local")
+        is_dual_source = local_data.get("dual_source", False)
 
         correlated_ioc = {
             "ip_address": ip_address,
             "confidence": final_confidence,
             "local_confidence": local_confidence,
-            "external_confidence": external_confidence,
+            "external_confidence": external_confidence or 0,
+            "final_confidence_score": final_confidence,  # Weighted score for STIX export
             "freshness_score": freshness_score,
             "reported_at": reported_at_str,
             "valid_from": reported_at_str,
@@ -267,10 +287,12 @@ class IOCCorrelationEngine:
             "threat_types": threat_types,
             "kill_chain_phases": kill_chain_phases,
             "source_priority": "local_primary",
-            "provider": "Local Detection" if not external_data else "AbuseIPDB",
+            "source": source_info,
+            "dual_source": is_dual_source,
+            "provider": primary_provider,
             "enrichment": {
                 "isp": isp,
-                "has_external_validation": external_data is not None,
+                "has_external_validation": external_data is not None or is_dual_source,
                 "geolocation": None,  # Will be populated by geolocation service
                 "providers": providers,
             },
