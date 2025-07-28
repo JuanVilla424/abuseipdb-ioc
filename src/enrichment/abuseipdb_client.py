@@ -272,3 +272,27 @@ class AbuseIPDBClient:
             await asyncio.sleep(0.5)
 
         return results
+
+    async def get_blacklist(self, confidence_minimum: int = 75, limit: int = 100) -> Dict[str, Any]:
+        """
+        Get blacklisted IPs from AbuseIPDB.
+
+        Args:
+            confidence_minimum: Minimum confidence score (25-100)
+            limit: Maximum IPs to return (max 10000)
+
+        Returns:
+            API response with blacklisted IPs
+        """
+        params = {
+            "confidenceMinimum": max(25, min(100, confidence_minimum)),
+            "limit": min(10000, limit),
+        }
+
+        async with self._semaphore:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.BASE_URL}/blacklist", headers=self.headers, params=params, timeout=30.0
+                )
+                response.raise_for_status()
+                return response.json()
