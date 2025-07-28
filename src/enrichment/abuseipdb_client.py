@@ -322,7 +322,11 @@ class AbuseIPDBClient:
         result = await db.execute(stmt)
         usage = result.scalar_one_or_none()
 
-        if usage and (usage.blacklist_requests or 0) >= daily_limit:
+        current_blacklist_requests = 0
+        if usage:
+            current_blacklist_requests = getattr(usage, "blacklist_requests", 0) or 0
+
+        if current_blacklist_requests >= daily_limit:
             logger.warning(f"Daily blacklist limit ({daily_limit}) reached")
             return {"data": []}
 
@@ -345,17 +349,31 @@ class AbuseIPDBClient:
 
     async def _increment_blacklist_usage(self, db: AsyncSession) -> None:
         """Increment blacklist usage counter."""
-        today = date.today()
+        try:
+            today = date.today()
 
-        # Get or create today's usage record
-        stmt = select(APIUsageTracking).where(APIUsageTracking.date == today)
-        result = await db.execute(stmt)
-        usage = result.scalar_one_or_none()
+            # Get or create today's usage record
+            stmt = select(APIUsageTracking).where(APIUsageTracking.date == today)
+            result = await db.execute(stmt)
+            usage = result.scalar_one_or_none()
 
-        if not usage:
-            usage = APIUsageTracking(date=today, requests_count=0, blacklist_requests=1)
-            db.add(usage)
-        else:
-            usage.blacklist_requests = (usage.blacklist_requests or 0) + 1
+            if not usage:
+                usage = APIUsageTracking(
+                    date=today,
+                    requests_count=0,
+                    successful_requests=0,
+                    failed_requests=0,
+                    blacklist_requests=1,
+                    redis_updates=0,
+                )
+                db.add(usage)
+                logger.info("Created new API usage tracking record for blacklist")
+            else:
+                current_blacklist = getattr(usage, "blacklist_requests", 0) or 0
+                usage.blacklist_requests = current_blacklist + 1
+                logger.info(f"Incremented blacklist usage to {usage.blacklist_requests}")
 
-        await db.commit()
+            await db.commit()
+        except Exception as e:
+            logger.error(f"Error incrementing blacklist usage: {e}")
+            await db.rollback()
