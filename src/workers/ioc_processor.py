@@ -115,12 +115,14 @@ class IOCProcessor:
                 # 4. Get cached enrichment data
                 external_data = await self._get_cached_enrichments(db, all_iocs)
 
-                # 5. Process IOCs in batches
+                # 5. Process IOCs in batches and cache incrementally
                 processed_iocs = []
                 for i in range(0, len(all_iocs), self.batch_size):
                     batch = all_iocs[i : i + self.batch_size]
-                    logger.info(f"Processing batch {i//self.batch_size + 1} ({len(batch)} IOCs)")
+                    batch_num = i // self.batch_size + 1
+                    logger.info(f"Processing batch {batch_num} ({len(batch)} IOCs)")
 
+                    batch_processed = []
                     for ioc in batch:
                         try:
                             ip_address = ioc["ip_address"]
@@ -144,22 +146,32 @@ class IOCProcessor:
                             enriched = await self.correlation_engine.enrich_with_geolocation(
                                 correlated
                             )
-                            processed_iocs.append(enriched)
+                            batch_processed.append(enriched)
 
                         except Exception as e:
                             logger.error(f"Error processing IOC {ioc.get('ip_address')}: {e}")
-                            processed_iocs.append(ioc)  # Add unprocessed
+                            batch_processed.append(ioc)  # Add unprocessed
 
-                # 6. Cache processed IOCs
-                await redis_cache.cache_iocs(
-                    processed_iocs, key="preprocessed_iocs", ttl=600
-                )  # 10 min TTL
-                logger.info(f"Cached {len(processed_iocs)} processed IOCs")
+                    # Add batch to total processed
+                    processed_iocs.extend(batch_processed)
 
-                # 7. Also cache by confidence level
-                high_confidence = [ioc for ioc in processed_iocs if ioc.get("confidence", 0) >= 80]
-                await redis_cache.cache_iocs(high_confidence, key="high_confidence_iocs", ttl=600)
-                logger.info(f"Cached {len(high_confidence)} high confidence IOCs")
+                    # 6. Cache all processed IOCs so far (incremental)
+                    await redis_cache.cache_iocs(processed_iocs, key="preprocessed_iocs", ttl=600)
+
+                    # 7. Cache high confidence IOCs so far
+                    high_confidence = [
+                        ioc for ioc in processed_iocs if ioc.get("confidence", 0) >= 80
+                    ]
+                    await redis_cache.cache_iocs(
+                        high_confidence, key="high_confidence_iocs", ttl=600
+                    )
+
+                    logger.info(
+                        f"Batch {batch_num} completed. Total cached: {len(processed_iocs)} IOCs ({len(high_confidence)} high confidence)"
+                    )
+
+                # Final log
+                logger.info(f"All batches completed. Final cache: {len(processed_iocs)} total IOCs")
 
                 # Calculate processing time
                 end_time = datetime.now(timezone.utc)
