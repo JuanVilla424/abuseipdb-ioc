@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.core.config import settings, get_version
 from src.core.logging import setup_logging
-from src.api.endpoints import iocs, health
+from src.api.endpoints import iocs, health, taxii
 from src.db.database import engine
 
 # Setup logging
@@ -43,6 +43,7 @@ app.add_middleware(
 # Include routers
 app.include_router(health.router)
 app.include_router(iocs.router)
+app.include_router(taxii.taxii_router)
 
 
 # No redirect needed anymore

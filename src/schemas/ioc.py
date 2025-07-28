@@ -36,20 +36,52 @@ class LocalIOC(IOCBase):
         from_attributes = True
 
 
-class EnrichmentData(BaseModel):
-    """Schema for enrichment data from AbuseIPDB."""
+class GeolocationData(BaseModel):
+    """Schema for IP geolocation information."""
 
     country_code: Optional[str] = None
+    country_name: Optional[str] = None
+    region: Optional[str] = None
+    city: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    continent: Optional[str] = None
+
+
+class ProviderData(BaseModel):
+    """Schema for threat intelligence provider information."""
+
+    name: str = Field(..., description="Provider name (e.g., 'AbuseIPDB', 'Local Detection')")
+    source: str = Field(..., description="Source system or feed name")
+    confidence: Optional[int] = Field(None, ge=0, le=100, description="Provider confidence score")
+    first_seen: Optional[datetime] = None
+    last_seen: Optional[datetime] = None
+    reference_url: Optional[str] = None
+
+
+class EnrichmentData(BaseModel):
+    """Schema for enrichment data from external sources."""
+
+    # Network information
     isp: Optional[str] = None
     usage_type: Optional[str] = None
+    domain: Optional[str] = None
+
+    # Threat intelligence
     has_external_validation: bool = False
     abuse_confidence_score: Optional[int] = None
     total_reports: Optional[int] = None
     last_reported_at: Optional[datetime] = None
 
+    # Geolocation
+    geolocation: Optional[GeolocationData] = None
+
+    # Provider information
+    providers: List[ProviderData] = Field(default_factory=list)
+
 
 class CorrelatedIOC(IOCBase):
-    """Standard IOC schema following industry best practices."""
+    """Standard IOC schema following industry best practices and Elasticsearch compatibility."""
 
     # Core IOC fields
     reported_at: datetime = Field(..., description="When the IOC was first reported")
@@ -64,16 +96,27 @@ class CorrelatedIOC(IOCBase):
         None, ge=0, le=100, description="External source confidence"
     )
 
-    # Freshness and priority (standard threat intel fields)
+    # Freshness and validity (Elasticsearch requirements)
     freshness_score: Optional[float] = Field(None, ge=0, le=1, description="IOC freshness score")
+    valid_until: Optional[datetime] = Field(None, description="When this IOC expires")
+    valid_from: Optional[datetime] = Field(None, description="When this IOC becomes valid")
+
+    # Source and priority information
     source_priority: Optional[str] = Field(None, description="Source priority classification")
+    provider: Optional[str] = Field(None, description="Primary threat intelligence provider")
 
     # Standard STIX labels for interoperability
     labels: List[str] = Field(
         default_factory=lambda: ["malicious-activity"], description="STIX 2.1 compliant labels"
     )
 
-    # Enrichment data
+    # Threat classification for Elasticsearch
+    threat_types: List[str] = Field(default_factory=list, description="Elastic threat types")
+    kill_chain_phases: List[str] = Field(
+        default_factory=list, description="MITRE ATT&CK kill chain phases"
+    )
+
+    # Enrichment data with geolocation and providers
     enrichment: Optional[EnrichmentData] = None
 
 

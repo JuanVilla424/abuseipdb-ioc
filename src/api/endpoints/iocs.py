@@ -183,7 +183,7 @@ async def get_iocs(
                                 cache_data.append(ioc_data)
 
                             # Store in Redis cache
-                            await redis_cache.set_iocs(db, cache_data)
+                            await redis_cache.set_iocs(cache_data)
 
                         # Handle pagination
                         paginated_data = (
@@ -219,8 +219,26 @@ async def get_iocs(
                 except Exception as e:
                     logger.error(f"Error fetching from AbuseIPDB blacklist: {e}")
 
-        # Correlate IOCs
-        correlated = correlation_engine.bulk_correlate(local_data, external_data)
+        # Correlate IOCs with enhanced format
+        correlated = []
+        for local_ioc in local_data:
+            ip_address = local_ioc["ip_address"]
+            external_ioc_data = external_data.get(ip_address)
+
+            # Use individual correlation method for better control
+            try:
+                individual_correlated = correlation_engine.correlate_ioc(
+                    local_ioc, external_ioc_data
+                )
+                # Enrich with geolocation
+                enriched_ioc = await correlation_engine.enrich_with_geolocation(
+                    individual_correlated
+                )
+                correlated.append(enriched_ioc)
+            except Exception as e:
+                logger.error(f"Correlation failed for {ip_address}: {e}")
+                # Fallback to basic format
+                correlated.append(local_ioc)
 
         # Apply confidence filter to correlated results
         if min_confidence:

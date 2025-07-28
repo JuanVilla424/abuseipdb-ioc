@@ -201,11 +201,30 @@ class AbuseIPDBClient:
                 cache_entry.domain = data.get("domain")
                 cache_entry.total_reports = data.get("totalReports", 0)
                 cache_entry.num_distinct_users = data.get("numDistinctUsers", 0)
-                cache_entry.last_reported_at = data.get("lastReportedAt")
+                last_reported_str = data.get("lastReportedAt")
+                if last_reported_str:
+                    try:
+                        cache_entry.last_reported_at = datetime.fromisoformat(
+                            last_reported_str.replace("Z", "+00:00")
+                        )
+                    except (ValueError, AttributeError):
+                        cache_entry.last_reported_at = None
+                else:
+                    cache_entry.last_reported_at = None
                 cache_entry.extra_data = data
                 cache_entry.last_checked = datetime.now(timezone.utc)
             else:
                 # Create new entry
+                last_reported_at = None
+                last_reported_str = data.get("lastReportedAt")
+                if last_reported_str:
+                    try:
+                        last_reported_at = datetime.fromisoformat(
+                            last_reported_str.replace("Z", "+00:00")
+                        )
+                    except (ValueError, AttributeError):
+                        last_reported_at = None
+
                 cache_entry = AbuseIPDBCache(
                     ip_address=ip_address,
                     abuse_confidence_score=data.get("abuseConfidenceScore", 0),
@@ -215,7 +234,7 @@ class AbuseIPDBClient:
                     domain=data.get("domain"),
                     total_reports=data.get("totalReports", 0),
                     num_distinct_users=data.get("numDistinctUsers", 0),
-                    last_reported_at=data.get("lastReportedAt"),
+                    last_reported_at=last_reported_at,
                     extra_data=data,
                 )
                 db.add(cache_entry)
@@ -278,7 +297,7 @@ class AbuseIPDBClient:
         db: AsyncSession,
         confidence_minimum: int = 75,
         limit: int = 100,
-        daily_limit: int = 10,
+        daily_limit: int = None,
     ) -> Dict[str, Any]:
         """
         Get blacklisted IPs from AbuseIPDB with daily limit tracking.
@@ -287,11 +306,16 @@ class AbuseIPDBClient:
             db: Database session for tracking usage
             confidence_minimum: Minimum confidence score (25-100)
             limit: Maximum IPs to return (max 10000)
-            daily_limit: Maximum blacklist calls per day
+            daily_limit: Maximum blacklist calls per day (uses config if None)
 
         Returns:
             API response with blacklisted IPs
         """
+        from src.core.config import settings
+
+        if daily_limit is None:
+            daily_limit = settings.ABUSEIPDB_DAILY_LIMIT
+
         # Check if we've exceeded daily blacklist limit
         today = date.today()
         stmt = select(APIUsageTracking).where(APIUsageTracking.date == today)
