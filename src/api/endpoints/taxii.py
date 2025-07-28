@@ -168,13 +168,20 @@ async def get_collection_objects(
                 paginated_objects = cached_iocs[:limit] if limit else cached_iocs
 
                 # Create STIX bundle
-                bundle = STIXExporter.create_bundle(paginated_objects)
+                try:
+                    bundle = STIXExporter.create_bundle(paginated_objects)
+                    if not bundle or "objects" not in bundle:
+                        logger.error("Invalid bundle created, falling back to empty bundle")
+                        bundle = STIXExporter.create_bundle([])
+                except Exception as e:
+                    logger.error(f"Error creating STIX bundle: {e}")
+                    bundle = STIXExporter.create_bundle([])
 
                 # TAXII 2.1 envelope format
                 envelope = {"more": total_objects > limit if limit else False, "data": bundle}
 
                 logger.info(
-                    f"TAXII 2.1: Returned {len(bundle['objects'])} of {total_objects} pre-processed objects from collection {collection_id}"
+                    f"TAXII 2.1: Returned {len(bundle.get('objects', []))} of {total_objects} pre-processed objects from collection {collection_id}"
                 )
 
                 return envelope
@@ -185,7 +192,17 @@ async def get_collection_objects(
         )
 
         # Return empty STIX bundle
-        empty_bundle = STIXExporter.create_bundle([])
+        try:
+            empty_bundle = STIXExporter.create_bundle([])
+        except Exception as e:
+            logger.error(f"Error creating empty STIX bundle: {e}")
+            empty_bundle = {
+                "type": "bundle",
+                "id": "bundle--empty",
+                "spec_version": "2.1",
+                "objects": [],
+            }
+
         envelope = {"more": False, "data": empty_bundle}
 
         return envelope
