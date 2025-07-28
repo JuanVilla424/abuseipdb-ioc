@@ -1,0 +1,43 @@
+---
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: abuseipdb-ioc
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - ABUSEIPDB_API_KEY=${ABUSEIPDB_API_KEY}
+      - API_SECRET_KEY=${API_SECRET_KEY}
+    volumes:
+      - ./logs:/app/logs
+      - ./.env:/app/.env
+    networks:
+      - ioc-network
+    depends_on:
+      - redis
+    command: >
+      sh -c "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000"
+
+  redis:
+    image: redis:7-alpine
+    container_name: abuseipdb-ioc-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - ioc-network
+    volumes:
+      - redis-data:/data
+
+networks:
+  ioc-network:
+    driver: bridge
+
+volumes:
+  redis-data:
