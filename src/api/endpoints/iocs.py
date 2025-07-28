@@ -110,6 +110,51 @@ async def get_iocs(
                     "last_reported_at": enrichment.last_reported_at,
                 }
 
+        # If no local data, try to get from AbuseIPDB blacklist
+        if not local_data and include_enrichment:
+            logger.info("No local IOCs found, fetching from AbuseIPDB blacklist")
+            try:
+                # Check rate limit first
+                if await abuseipdb_client.check_rate_limit(db):
+                    blacklist_response = await abuseipdb_client.get_blacklist(
+                        confidence_minimum=min_confidence or 75,
+                        limit=skip + limit,  # Get enough to paginate
+                    )
+
+                    # Convert blacklist to our format
+                    blacklist_data = blacklist_response.get("data", [])
+                    # Handle pagination
+                    paginated_data = (
+                        blacklist_data[skip : skip + limit] if skip < len(blacklist_data) else []
+                    )
+
+                    for item in paginated_data:
+                        ioc_data = {
+                            "ip_address": item.get("ipAddress"),
+                            "confidence": item.get("abuseConfidenceScore", 0),
+                            "reported_at": datetime.now(timezone.utc),
+                            "report_id": f"ABUSEIPDB-{item.get('ipAddress')}",
+                            "categories": [],
+                            "created_at": datetime.now(timezone.utc),
+                        }
+                        local_data.append(ioc_data)
+
+                        # Add to external data
+                        external_data[item.get("ipAddress")] = {
+                            "abuse_confidence_score": item.get("abuseConfidenceScore", 0),
+                            "country_code": item.get("countryCode"),
+                            "usage_type": item.get("usageType"),
+                            "isp": item.get("isp"),
+                            "total_reports": item.get("totalReports", 0),
+                            "last_reported_at": item.get("lastReportedAt"),
+                        }
+
+                    total_count = len(blacklist_data)
+                else:
+                    logger.warning("Rate limit reached, cannot fetch from AbuseIPDB")
+            except Exception as e:
+                logger.error(f"Error fetching from AbuseIPDB blacklist: {e}")
+
         # Correlate IOCs
         correlated = correlation_engine.bulk_correlate(local_data, external_data)
 
