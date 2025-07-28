@@ -14,6 +14,16 @@ from sqlalchemy import select
 from src.db.models import APIUsageTracking
 from src.core.config import settings
 
+
+class DateTimeEncoder(json.JSONEncoder):
+    """Custom JSON encoder for datetime objects."""
+
+    def default(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        return super().default(obj)
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -100,7 +110,7 @@ class RedisIOCCache:
                 "count": len(iocs),
             }
 
-            await self._redis.setex(key, ttl, json.dumps(cache_data))
+            await self._redis.setex(key, ttl, json.dumps(cache_data, cls=DateTimeEncoder))
             logger.info(f"Cached {len(iocs)} IOCs in Redis with {ttl}s TTL")
             return True
 
