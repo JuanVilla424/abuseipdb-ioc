@@ -52,6 +52,9 @@ class GeolocationService:
         for service in services:
             try:
                 # Apply dynamic delay before making the request
+                logger.debug(
+                    f"Waiting {self.current_delay:.2f}s before geolocation request for {ip_address}"
+                )
                 await asyncio.sleep(self.current_delay)
 
                 result = await service(ip_address)
@@ -63,7 +66,11 @@ class GeolocationService:
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 429:  # Rate limit exceeded
                     self._handle_rate_limit_error(service.__name__)
-                    logger.warning(f"Rate limit hit for {service.__name__}, backing off...")
+                    logger.warning(
+                        f"Rate limit hit for {service.__name__}, current delay: {self.current_delay:.2f}s"
+                    )
+                    # Wait additional time for rate limit recovery
+                    await asyncio.sleep(self.current_delay)
                     continue
                 else:
                     self._handle_error(service.__name__, str(e))
