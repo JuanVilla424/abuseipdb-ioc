@@ -273,17 +273,35 @@ class AbuseIPDBClient:
 
         return results
 
-    async def get_blacklist(self, confidence_minimum: int = 75, limit: int = 100) -> Dict[str, Any]:
+    async def get_blacklist(
+        self,
+        db: AsyncSession,
+        confidence_minimum: int = 75,
+        limit: int = 100,
+        daily_limit: int = 10,
+    ) -> Dict[str, Any]:
         """
-        Get blacklisted IPs from AbuseIPDB.
+        Get blacklisted IPs from AbuseIPDB with daily limit tracking.
 
         Args:
+            db: Database session for tracking usage
             confidence_minimum: Minimum confidence score (25-100)
             limit: Maximum IPs to return (max 10000)
+            daily_limit: Maximum blacklist calls per day
 
         Returns:
             API response with blacklisted IPs
         """
+        # Check if we've exceeded daily blacklist limit
+        today = date.today()
+        stmt = select(APIUsageTracking).where(APIUsageTracking.date == today)
+        result = await db.execute(stmt)
+        usage = result.scalar_one_or_none()
+
+        if usage and usage.blacklist_requests >= daily_limit:
+            logger.warning(f"Daily blacklist limit ({daily_limit}) reached")
+            return {"data": []}
+
         params = {
             "confidenceMinimum": max(25, min(100, confidence_minimum)),
             "limit": min(10000, limit),
@@ -295,4 +313,25 @@ class AbuseIPDBClient:
                     f"{self.BASE_URL}/blacklist", headers=self.headers, params=params, timeout=30.0
                 )
                 response.raise_for_status()
+
+                # Update blacklist usage counter
+                await self._increment_blacklist_usage(db)
+
                 return response.json()
+
+    async def _increment_blacklist_usage(self, db: AsyncSession) -> None:
+        """Increment blacklist usage counter."""
+        today = date.today()
+
+        # Get or create today's usage record
+        stmt = select(APIUsageTracking).where(APIUsageTracking.date == today)
+        result = await db.execute(stmt)
+        usage = result.scalar_one_or_none()
+
+        if not usage:
+            usage = APIUsageTracking(date=today, requests_count=0, blacklist_requests=1)
+            db.add(usage)
+        else:
+            usage.blacklist_requests = (usage.blacklist_requests or 0) + 1
+
+        await db.commit()

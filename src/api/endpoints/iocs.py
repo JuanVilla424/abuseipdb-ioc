@@ -5,6 +5,7 @@ Provides REST API for querying and enriching IOCs.
 """
 
 import logging
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from src.db.database import get_db
 from src.db.models import ReportedIPs, AbuseIPDBCache
-from src.schemas.ioc import IOCListResponse, CorrelatedIOC, BulkCheckRequest
+from src.schemas.ioc import IOCListResponse, CorrelatedIOC, BulkCheckRequest, STIXBundleResponse
 from src.enrichment.abuseipdb_client import AbuseIPDBClient
 from src.core.correlation import IOCCorrelationEngine
 from src.core.config import settings
@@ -27,7 +28,7 @@ abuseipdb_client = AbuseIPDBClient(settings.ABUSEIPDB_API_KEY)
 correlation_engine = IOCCorrelationEngine()
 
 
-@router.get("/", response_model=IOCListResponse)
+@router.get("", response_model=IOCListResponse)  # Sin barra final
 async def get_iocs(
     db: AsyncSession = Depends(get_db),
     skip: int = Query(0, ge=0),
@@ -110,50 +111,113 @@ async def get_iocs(
                     "last_reported_at": enrichment.last_reported_at,
                 }
 
-        # If no local data, try to get from AbuseIPDB blacklist
+        # If no local data, try to get from Redis cache first, then AbuseIPDB blacklist
         if not local_data and include_enrichment:
-            logger.info("No local IOCs found, fetching from AbuseIPDB blacklist")
+            # Try Redis cache first
+            redis_cache = None
             try:
-                # Check rate limit first
-                if await abuseipdb_client.check_rate_limit(db):
-                    blacklist_response = await abuseipdb_client.get_blacklist(
-                        confidence_minimum=min_confidence or 75,
-                        limit=skip + limit,  # Get enough to paginate
-                    )
+                from src.utils.redis_client import get_redis_cache
 
-                    # Convert blacklist to our format
-                    blacklist_data = blacklist_response.get("data", [])
-                    # Handle pagination
-                    paginated_data = (
-                        blacklist_data[skip : skip + limit] if skip < len(blacklist_data) else []
-                    )
+                redis_cache = await get_redis_cache()
+                if redis_cache:
+                    cached_iocs = await redis_cache.get_iocs()
+                    if cached_iocs:
+                        logger.info(f"Retrieved {len(cached_iocs)} IOCs from Redis cache")
+                        # Apply pagination to cached data
+                        paginated_data = (
+                            cached_iocs[skip : skip + limit] if skip < len(cached_iocs) else []
+                        )
 
-                    for item in paginated_data:
-                        ioc_data = {
-                            "ip_address": item.get("ipAddress"),
-                            "confidence": item.get("abuseConfidenceScore", 0),
-                            "reported_at": datetime.now(timezone.utc),
-                            "report_id": f"ABUSEIPDB-{item.get('ipAddress')}",
-                            "categories": [],
-                            "created_at": datetime.now(timezone.utc),
-                        }
-                        local_data.append(ioc_data)
+                        for item in paginated_data:
+                            local_data.append(item)
+                            # Add to external data for correlation
+                            external_data[item["ip_address"]] = {
+                                "abuse_confidence_score": item.get("confidence", 0),
+                                "country_code": item.get("enrichment", {}).get("country_code"),
+                                "usage_type": item.get("enrichment", {}).get("usage_type"),
+                                "isp": item.get("enrichment", {}).get("isp"),
+                                "total_reports": item.get("enrichment", {}).get("total_reports", 0),
+                                "last_reported_at": item.get("enrichment", {}).get(
+                                    "last_reported_at"
+                                ),
+                            }
 
-                        # Add to external data
-                        external_data[item.get("ipAddress")] = {
-                            "abuse_confidence_score": item.get("abuseConfidenceScore", 0),
-                            "country_code": item.get("countryCode"),
-                            "usage_type": item.get("usageType"),
-                            "isp": item.get("isp"),
-                            "total_reports": item.get("totalReports", 0),
-                            "last_reported_at": item.get("lastReportedAt"),
-                        }
-
-                    total_count = len(blacklist_data)
-                else:
-                    logger.warning("Rate limit reached, cannot fetch from AbuseIPDB")
+                        total_count = len(cached_iocs)
             except Exception as e:
-                logger.error(f"Error fetching from AbuseIPDB blacklist: {e}")
+                logger.warning(f"Redis cache error: {e}")
+
+            # If no cached data, fetch from AbuseIPDB blacklist
+            if not local_data:
+                logger.info("No cached IOCs found, fetching from AbuseIPDB blacklist")
+                try:
+                    # Check rate limit first
+                    if await abuseipdb_client.check_rate_limit(db):
+                        blacklist_response = await abuseipdb_client.get_blacklist(
+                            db=db,
+                            confidence_minimum=min_confidence or 75,
+                            limit=skip + limit,  # Get enough to paginate
+                            daily_limit=settings.ABUSEIPDB_DAILY_BLACKLIST_LIMIT,
+                        )
+
+                        # Convert blacklist to our format
+                        blacklist_data = blacklist_response.get("data", [])
+
+                        # Cache the full response in Redis if available
+                        if redis_cache and blacklist_data:
+                            cache_data = []
+                            for item in blacklist_data:
+                                ioc_data = {
+                                    "ip_address": item.get("ipAddress"),
+                                    "confidence": item.get("abuseConfidenceScore", 0),
+                                    "reported_at": datetime.now(timezone.utc).isoformat(),
+                                    "report_id": f"ABUSEIPDB-{item.get('ipAddress')}",
+                                    "categories": [],
+                                    "enrichment": {
+                                        "country_code": item.get("countryCode"),
+                                        "usage_type": item.get("usageType"),
+                                        "isp": item.get("isp"),
+                                        "total_reports": item.get("totalReports", 0),
+                                        "last_reported_at": item.get("lastReportedAt"),
+                                    },
+                                }
+                                cache_data.append(ioc_data)
+
+                            # Store in Redis cache
+                            await redis_cache.set_iocs(db, cache_data)
+
+                        # Handle pagination
+                        paginated_data = (
+                            blacklist_data[skip : skip + limit]
+                            if skip < len(blacklist_data)
+                            else []
+                        )
+
+                        for item in paginated_data:
+                            ioc_data = {
+                                "ip_address": item.get("ipAddress"),
+                                "confidence": item.get("abuseConfidenceScore", 0),
+                                "reported_at": datetime.now(timezone.utc),
+                                "report_id": f"ABUSEIPDB-{item.get('ipAddress')}",
+                                "categories": [],
+                                "created_at": datetime.now(timezone.utc),
+                            }
+                            local_data.append(ioc_data)
+
+                            # Add to external data
+                            external_data[item.get("ipAddress")] = {
+                                "abuse_confidence_score": item.get("abuseConfidenceScore", 0),
+                                "country_code": item.get("countryCode"),
+                                "usage_type": item.get("usageType"),
+                                "isp": item.get("isp"),
+                                "total_reports": item.get("totalReports", 0),
+                                "last_reported_at": item.get("lastReportedAt"),
+                            }
+
+                        total_count = len(blacklist_data)
+                    else:
+                        logger.warning("Rate limit reached, cannot fetch from AbuseIPDB")
+                except Exception as e:
+                    logger.error(f"Error fetching from AbuseIPDB blacklist: {e}")
 
         # Correlate IOCs
         correlated = correlation_engine.bulk_correlate(local_data, external_data)
@@ -175,6 +239,34 @@ async def get_iocs(
     except Exception as e:
         logger.error(f"Error fetching IOCs: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/stix")
+async def get_stix_bundle(
+    db: AsyncSession = Depends(get_db),
+    min_confidence: Optional[int] = Query(75, ge=0, le=100),
+    limit: int = Query(100, ge=1, le=10000),
+) -> Dict[str, Any]:
+    """
+    Get IOCs in STIX bundle format with 'objects' array for Elasticsearch.
+
+    This endpoint returns a STIX 2.1 bundle directly as JSON (not as a download).
+    """
+    # Get IOCs
+    response = await get_iocs(
+        db=db,
+        skip=0,
+        limit=limit,
+        min_confidence=min_confidence,
+        include_enrichment=True,
+    )
+
+    # Convert to STIX bundle
+    bundle_dict = STIXExporter.create_bundle(response.items)
+
+    logger.info(f"Returning STIX bundle with {len(bundle_dict.get('objects', []))} objects")
+
+    return bundle_dict
 
 
 @router.get("/{ip_address}", response_model=CorrelatedIOC)
@@ -305,7 +397,8 @@ async def export_iocs(
         filename = f"iocs_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
 
     elif format == "stix":
-        content = STIXExporter.create_bundle(iocs)
+        bundle_dict = STIXExporter.create_bundle(iocs)
+        content = json.dumps(bundle_dict)
         media_type = "application/json"
         filename = f"iocs_stix_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.json"
 
