@@ -140,62 +140,62 @@ class IOCPreProcessor:
             cache_result = await db.execute(cache_query)
             cached_enrichments = {e.ip_address: e for e in cache_result.scalars().all()}
 
-            # Process in batches to avoid memory issues
-            batch_size = 100
+            # Process IOCs sequentially to respect geolocation rate limits
             processed_iocs = []
 
-            for i in range(0, len(all_iocs), batch_size):
-                batch = all_iocs[i : i + batch_size]
-                logger.info(f"Processing batch {i//batch_size + 1} ({len(batch)} IOCs)...")
+            logger.info(
+                f"Processing {len(all_iocs)} IOCs sequentially with geolocation rate limiting..."
+            )
 
-                for batch_idx, ioc in enumerate(batch):
-                    try:
-
-                        # Get cached enrichment if available
-                        external_data = None
-                        if ioc["ip_address"] in cached_enrichments:
-                            cache = cached_enrichments[ioc["ip_address"]]
-                            external_data = {
-                                "abuse_confidence_score": cache.abuse_confidence_score,
-                                "country_code": cache.country_code,
-                                "isp": cache.isp,
-                                "usage_type": cache.usage_type,
-                                "total_reports": cache.total_reports,
-                                "last_reported_at": cache.last_reported_at,
-                            }
-                        # For AbuseIPDB blacklist items, they already have abuse confidence
-                        elif ioc.get("source") == "abuseipdb":
-                            external_data = {
-                                "abuse_confidence_score": ioc["confidence"],
-                                "country_code": None,
-                                "isp": None,
-                                "usage_type": None,
-                                "total_reports": 1,
-                                "last_reported_at": ioc["reported_at"],
-                            }
-
-                        # Correlate
-                        correlated = self.correlation_engine.correlate_ioc(ioc, external_data)
-
-                        # Enrich with geolocation
-                        enriched = await self.correlation_engine.enrich_with_geolocation(correlated)
-
-                        if enriched.get("enrichment", {}).get("geolocation"):
-                            stats["geo_enriched"] += 1
-
-                        processed_iocs.append(enriched)
-                        stats["processed"] += 1
-
-                    except Exception as e:
-                        # Handle case where ioc might not be a dictionary
-                        ip_address = (
-                            ioc.get("ip_address", "unknown") if isinstance(ioc, dict) else str(ioc)
+            for idx, ioc in enumerate(all_iocs):
+                try:
+                    if idx % 50 == 0:  # Progress log every 50 IOCs
+                        logger.info(
+                            f"Processing IOC {idx+1}/{len(all_iocs)} ({((idx+1)/len(all_iocs)*100):.1f}%)"
                         )
-                        logger.error(f"Error processing IOC {ip_address}: {e}")
-                        stats["errors"] += 1
 
-                # Small delay to avoid overwhelming geo service
-                await asyncio.sleep(0.1)
+                    # Get cached enrichment if available
+                    external_data = None
+                    if ioc["ip_address"] in cached_enrichments:
+                        cache = cached_enrichments[ioc["ip_address"]]
+                        external_data = {
+                            "abuse_confidence_score": cache.abuse_confidence_score,
+                            "country_code": cache.country_code,
+                            "isp": cache.isp,
+                            "usage_type": cache.usage_type,
+                            "total_reports": cache.total_reports,
+                            "last_reported_at": cache.last_reported_at,
+                        }
+                    # For AbuseIPDB blacklist items, they already have abuse confidence
+                    elif ioc.get("source") == "abuseipdb":
+                        external_data = {
+                            "abuse_confidence_score": ioc["confidence"],
+                            "country_code": None,
+                            "isp": None,
+                            "usage_type": None,
+                            "total_reports": 1,
+                            "last_reported_at": ioc["reported_at"],
+                        }
+
+                    # Correlate
+                    correlated = self.correlation_engine.correlate_ioc(ioc, external_data)
+
+                    # Enrich with geolocation (sequential processing respects rate limits)
+                    enriched = await self.correlation_engine.enrich_with_geolocation(correlated)
+
+                    if enriched.get("enrichment", {}).get("geolocation"):
+                        stats["geo_enriched"] += 1
+
+                    processed_iocs.append(enriched)
+                    stats["processed"] += 1
+
+                except Exception as e:
+                    # Handle case where ioc might not be a dictionary
+                    ip_address = (
+                        ioc.get("ip_address", "unknown") if isinstance(ioc, dict) else str(ioc)
+                    )
+                    logger.error(f"Error processing IOC {ip_address}: {e}")
+                    stats["errors"] += 1
 
             # Cache processed IOCs in Redis
             redis_cache = await get_redis_cache()
