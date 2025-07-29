@@ -53,6 +53,7 @@
 - **🌐 Dual-Source Intelligence** - Combines your local attacks with AbuseIPDB's global data
 - **⚖️ Weighted Confidence Scoring** - Prioritizes local detections (80%) over external sources (20%)
 - **📊 STIX 2.1 IOC Standardization** - Converts raw threat data into industry-standard IOCs
+- **🌍 IPv6 Native Support** - Full IPv4/IPv6 dual-stack processing with automatic detection
 - **🔧 TAXII 2.1 Server** - Enterprise-grade threat intelligence distribution
 - **⚡ High Performance** - Async FastAPI with intelligent caching and rate limiting
 
@@ -64,6 +65,15 @@
 - **🔄 Real-time Correlation** - Live fusion of local and external threat data
 - **📈 Confidence Boosting** - Local detections ≥75% confidence get minimum 85% final score
 - **🎯 Intelligence Prioritization** - Local detections as primary source
+
+### 🌍 IPv6 Support Features
+
+- **🔍 Automatic IP Version Detection** - Seamlessly processes IPv4 and IPv6 addresses
+- **📊 Dynamic STIX Pattern Generation** - `ipv4-addr` / `ipv6-addr` patterns based on IP type
+- **🎯 Comprehensive IPv6 Format Support** - Full, compressed, link-local, and IPv4-mapped formats
+- **📝 Text Extraction** - Advanced regex patterns detect IPv6 addresses in logs and text
+- **🔄 Mixed Processing** - Handles IPv4/IPv6 mixed batches in single operations
+- **⚡ Performance Optimized** - No overhead when processing IPv4-only environments
 
 ### 🔒 Zero Trust Advantages
 
@@ -500,6 +510,87 @@ Each IOC includes multiple geolocation formats:
 }
 ```
 
+### 🔧 Elasticsearch Pipeline Setup
+
+**⚠️ IMPORTANT:** Execute the following commands in Elasticsearch Dev Tools console to set up the required ingest pipeline:
+
+<details>
+<summary>📋 <strong>Click to expand Elasticsearch pipeline commands</strong></summary>
+
+```javascript
+# 1. Check the ingest pipeline (should be empty initially)
+GET _ingest/pipeline/logs@custom
+
+# 2. Create/update the logs@custom pipeline for STIX field mapping
+PUT _ingest/pipeline/logs@custom
+{
+  "description": "[Fleet] Pipeline for all data streams of type `logs`",
+  "processors": [
+    {
+      "script": {
+        "description": "Map STIX fields to threat.indicator",
+        "tag": "stix_to_threat_indicator_mapper",
+        "lang": "painless",
+        "source": "if (ctx.stix != null && ctx.data_stream?.dataset == 'ti_custom.indicator') { if (ctx.threat == null) ctx.threat = [:]; if (ctx.threat.indicator == null) ctx.threat.indicator = [:]; if (ctx.stix.containsKey('threat.indicator.provider')) { ctx.threat.indicator.provider = ctx.stix['threat.indicator.provider']; } if (ctx.stix.containsKey('threat.indicator.sightings')) { ctx.threat.indicator.sightings = ctx.stix['threat.indicator.sightings']; } if (ctx.stix.containsKey('threat.indicator.tags')) { ctx.threat.indicator.tags = ctx.stix['threat.indicator.tags']; } if (ctx.stix.containsKey('threat.indicator.description')) { ctx.threat.indicator.description = ctx.stix['threat.indicator.description']; } if (ctx.stix.containsKey('threat.indicator.marking.tlp')) { if (ctx.threat.indicator.marking == null) ctx.threat.indicator.marking = [:]; ctx.threat.indicator.marking.tlp = ctx.stix['threat.indicator.marking.tlp']; } if (ctx.stix.containsKey('threat.indicator.as.organization.name')) { if (ctx.threat.indicator.as == null) ctx.threat.indicator.as = [:]; if (ctx.threat.indicator.as.organization == null) ctx.threat.indicator.as.organization = [:]; ctx.threat.indicator.as.organization.name = ctx.stix['threat.indicator.as.organization.name']; } if (ctx.stix.containsKey('threat.indicator.geo')) { ctx.threat.indicator.geo = ctx.stix['threat.indicator.geo']; } if (ctx.stix.containsKey('kill_chain_phases')) { ctx.threat.indicator.kill_chain_phases = ctx.stix.kill_chain_phases; } if (ctx.stix.containsKey('external_references')) { ctx.threat.indicator.external_references = ctx.stix.external_references; } if (ctx.stix.containsKey('x_elastic_confidence_score')) { ctx.threat.indicator.confidence_score = ctx.stix.x_elastic_confidence_score; } if (ctx.stix.containsKey('x_elastic_freshness_score')) { ctx.threat.indicator.freshness_score = ctx.stix.x_elastic_freshness_score; } if (ctx.stix.containsKey('x_elastic_isp')) { ctx.threat.indicator.isp = ctx.stix.x_elastic_isp; } if (ctx.stix.containsKey('x_elastic_threat_types')) { ctx.threat.indicator.threat_types = ctx.stix.x_elastic_threat_types; } if (ctx.stix.containsKey('pattern')) { ctx.threat.indicator.pattern = ctx.stix.pattern; } if (ctx.stix.containsKey('pattern_type')) { ctx.threat.indicator.pattern_type = ctx.stix.pattern_type; } if (ctx.stix.containsKey('pattern_version')) { ctx.threat.indicator.pattern_version = ctx.stix.pattern_version; } if (ctx.stix.containsKey('spec_version')) { ctx.threat.indicator.spec_version = ctx.stix.spec_version; } if (ctx.stix.containsKey('revoked')) { ctx.threat.indicator.revoked = ctx.stix.revoked; } }",
+        "if": "ctx.stix != null && ctx.data_stream?.dataset == 'ti_custom.indicator'"
+      }
+    }
+  ]
+}
+
+# 3. Verify pipeline creation
+GET _ingest/pipeline/logs@custom
+
+# 4. Test pipeline with sample document
+POST _ingest/pipeline/logs@custom/_simulate
+{
+  "docs": [
+    {
+      "_source": {
+        "data_stream": {
+          "dataset": "ti_custom.indicator"
+        },
+        "stix": {
+          "threat.indicator.provider": "abuseipdb-ioc-db-provider",
+          "threat.indicator.sightings": 1,
+          "threat.indicator.tags": ["web-attack", "exploit"],
+          "threat.indicator.geo": {
+            "city_name": "Phoenix",
+            "country_name": "United States"
+          }
+        },
+        "threat": {
+          "indicator": {
+            "type": "ipv4-addr"
+          }
+        }
+      }
+    }
+  ]
+}
+
+# 5. After configuring CTI and starting transforms, verify data processing
+GET logs-ti_custom.indicator*/_search
+{
+  "size": 1,
+  "query": {
+    "exists": {
+      "field": "threat.indicator.provider"
+    }
+  },
+  "_source": ["threat.indicator.provider", "threat.indicator.sightings", "threat.indicator.tags", "threat.indicator.geo"]
+}
+```
+
+</details>
+
+**📋 Setup Steps:**
+
+1. Execute the pipeline setup commands in Elasticsearch Dev Tools
+2. Configure Custom Threat Intelligence integration in Fleet
+3. Start the transform to process incoming STIX data
+4. Verify data is being processed correctly with the search query
+
 ---
 
 ## 🌍 Geolocation Enrichment
@@ -731,6 +822,91 @@ curl -X GET "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/object
 
 # 📈 Monitor processing over time
 tail -f logs/abuseipdb_ioc.log | grep "pre-processed"
+```
+
+</details>
+
+### 🌍 IPv6 Support Examples
+
+<details>
+<summary>🔍 <strong>IPv6 STIX Pattern Generation</strong></summary>
+
+```bash
+# 📊 Example IPv6 IOCs with STIX patterns
+curl -X GET "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" \
+  -H "Accept: application/json" | \
+  jq '.data.objects[] | select(.pattern | contains("ipv6-addr")) | {
+    pattern: .pattern,
+    confidence: .confidence,
+    geo: .x_elastic_geo_location
+  }'
+
+# 📋 Example IPv6 patterns generated:
+{
+  "pattern": "[ipv6-addr:value = '2001:db8::1']",
+  "confidence": 85,
+  "geo": {"lat": 37.7749, "lon": -122.4194}
+}
+{
+  "pattern": "[ipv6-addr:value = '2001:0db8:85a3:0000:0000:8a2e:0370:7334']",
+  "confidence": 90,
+  "geo": {"lat": 40.7128, "lon": -74.0060}
+}
+{
+  "pattern": "[ipv6-addr:value = '::1']",
+  "confidence": 75,
+  "geo": null
+}
+```
+
+</details>
+
+<details>
+<summary>🎯 <strong>Mixed IPv4/IPv6 Processing</strong></summary>
+
+```bash
+# 📊 View all IOCs showing IP version diversity
+curl -X GET "http://localhost:8000/taxii2/iocs/collections/ioc-indicators/objects" \
+  -H "Accept: application/json" | \
+  jq '.data.objects[] | {
+    pattern: .pattern,
+    type: (if .pattern | contains("ipv4-addr") then "IPv4"
+           elif .pattern | contains("ipv6-addr") then "IPv6"
+           else "Unknown" end),
+    confidence: .confidence
+  }'
+
+# 📋 Example mixed output:
+{
+  "pattern": "[ipv4-addr:value = '192.168.1.100']",
+  "type": "IPv4",
+  "confidence": 88
+}
+{
+  "pattern": "[ipv6-addr:value = '2001:db8::1']",
+  "type": "IPv6",
+  "confidence": 85
+}
+```
+
+</details>
+
+<details>
+<summary>📝 <strong>IPv6 Format Support</strong></summary>
+
+The system automatically detects and processes various IPv6 formats:
+
+```bash
+# ✅ Supported IPv6 formats in your database:
+# Full format: 2001:0db8:85a3:0000:0000:8a2e:0370:7334
+# Compressed: 2001:db8:85a3::8a2e:370:7334
+# Loopback: ::1
+# All zeros: ::
+# IPv4-mapped: ::ffff:192.0.2.1
+# Link-local: fe80::1%lo0
+
+# 🔍 Check IPv6 processing in logs
+tail -f logs/abuseipdb_ioc.log | grep -E "(IPv6|ipv6-addr)"
 ```
 
 </details>
