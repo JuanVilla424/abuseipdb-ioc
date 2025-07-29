@@ -88,6 +88,26 @@ def sanitize_ip_list(ip_list: List[str]) -> List[str]:
     return valid_ips
 
 
+def get_ip_version(ip_str: str) -> int:
+    """
+    Get IP version (4 or 6).
+
+    Args:
+        ip_str: IP address string
+
+    Returns:
+        int: 4 for IPv4, 6 for IPv6
+
+    Raises:
+        ValueError: If invalid IP address
+    """
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return ip.version
+    except ValueError:
+        raise ValueError(f"Invalid IP address: {ip_str}")
+
+
 def extract_ips_from_text(text: str) -> List[str]:
     """
     Extract IP addresses from text using regex.
@@ -101,5 +121,15 @@ def extract_ips_from_text(text: str) -> List[str]:
     # Regex pattern for IPv4 addresses
     ipv4_pattern = r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b"
 
-    found_ips = re.findall(ipv4_pattern, text)
+    # Regex pattern for IPv6 addresses (matches most common formats)
+    ipv6_pattern = r"(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}|::1|::"
+
+    found_ips = []
+
+    # Find IPv4 addresses
+    found_ips.extend(re.findall(ipv4_pattern, text))
+
+    # Find IPv6 addresses
+    found_ips.extend(re.findall(ipv6_pattern, text))
+
     return [ip for ip in found_ips if is_valid_ip(ip)]

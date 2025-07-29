@@ -7,7 +7,7 @@ Converts correlated IOCs to STIX 2.1 format for SIEM integration.
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import stix2
-import json
+from ..utils.validators import get_ip_version
 
 
 class STIXExporter:
@@ -30,8 +30,10 @@ class STIXExporter:
         else:
             ioc_data = ioc
 
-        # Create STIX 2.1 compliant pattern for IP indicator
-        pattern = f"[ipv4-addr:value = '{ioc_data['ip_address']}']"
+        # Create STIX 2.1 compliant pattern for IP indicator (IPv4 or IPv6)
+        ip_version = get_ip_version(ioc_data["ip_address"])
+        addr_type = "ipv4-addr" if ip_version == 4 else "ipv6-addr"
+        pattern = f"[{addr_type}:value = '{ioc_data['ip_address']}']"
 
         # Use labels from correlation engine or fallback to standard
         labels = ioc_data.get("labels", ["malicious-activity"])
