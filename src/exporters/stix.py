@@ -132,7 +132,7 @@ class STIXExporter:
         # Add custom properties for Elasticsearch Custom Threat Intelligence
         custom_properties = {
             # ECS threat.indicator fields
-            "x_elastic_provider": ioc_data.get("provider", provider),
+            "x_elastic_provider": provider,
             "x_elastic_confidence_score": confidence_score,
             "x_elastic_threat_types": ioc_data.get("threat_types", []),
             "x_elastic_freshness_score": ioc_data.get("freshness_score", 1.0),
@@ -271,6 +271,11 @@ class STIXExporter:
                 "event.category": "threat",
                 "event.type": ["indicator"],
                 "event.kind": "enrichment",
+                "_source": {
+                    "url": "http://localhost:52957/taxii2/iocs/collections/ioc-indicators/objects",
+                    "provider": provider,
+                    "type": "taxii2",
+                },
             }
         )
 
