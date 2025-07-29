@@ -10,6 +10,9 @@ package-lock.json*
 dist/
 *.tsbuildinfo
 
+.claude
+htmlcov
+
 # Poetry
 poetry.lock
 

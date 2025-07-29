@@ -1,0 +1,62 @@
+# 1. First one, check the ingest pipeline skeleton, may must be empty
+GET _ingest/pipeline/logs@custom
+
+# 2. Upsert script to logs@custom pipeline (this pipeline is designed for this processes)
+PUT _ingest/pipeline/logs@custom
+{
+  "description": "[Fleet] Pipeline for all data streams of type `logs`",
+  "processors": [
+    {
+      "script": {
+        "description": "Map STIX fields to threat.indicator",
+        "tag": "stix_to_threat_indicator_mapper",
+        "lang": "painless",
+        "source": "if (ctx.stix != null && ctx.data_stream?.dataset == 'ti_custom.indicator') { if (ctx.threat == null) ctx.threat = [:]; if (ctx.threat.indicator == null) ctx.threat.indicator = [:]; if (ctx.stix.containsKey('threat.indicator.provider')) { ctx.threat.indicator.provider = ctx.stix['threat.indicator.provider']; } if (ctx.stix.containsKey('threat.indicator.sightings')) { ctx.threat.indicator.sightings = ctx.stix['threat.indicator.sightings']; } if (ctx.stix.containsKey('threat.indicator.tags')) { ctx.threat.indicator.tags = ctx.stix['threat.indicator.tags']; } if (ctx.stix.containsKey('threat.indicator.description')) { ctx.threat.indicator.description = ctx.stix['threat.indicator.description']; } if (ctx.stix.containsKey('threat.indicator.marking.tlp')) { if (ctx.threat.indicator.marking == null) ctx.threat.indicator.marking = [:]; ctx.threat.indicator.marking.tlp = ctx.stix['threat.indicator.marking.tlp']; } if (ctx.stix.containsKey('threat.indicator.as.organization.name')) { if (ctx.threat.indicator.as == null) ctx.threat.indicator.as = [:]; if (ctx.threat.indicator.as.organization == null) ctx.threat.indicator.as.organization = [:]; ctx.threat.indicator.as.organization.name = ctx.stix['threat.indicator.as.organization.name']; } if (ctx.stix.containsKey('threat.indicator.geo')) { ctx.threat.indicator.geo = ctx.stix['threat.indicator.geo']; } if (ctx.stix.containsKey('kill_chain_phases')) { ctx.threat.indicator.kill_chain_phases = ctx.stix.kill_chain_phases; } if (ctx.stix.containsKey('external_references')) { ctx.threat.indicator.external_references = ctx.stix.external_references; } if (ctx.stix.containsKey('x_elastic_confidence_score')) { ctx.threat.indicator.confidence_score = ctx.stix.x_elastic_confidence_score; } if (ctx.stix.containsKey('x_elastic_freshness_score')) { ctx.threat.indicator.freshness_score = ctx.stix.x_elastic_freshness_score; } if (ctx.stix.containsKey('x_elastic_isp')) { ctx.threat.indicator.isp = ctx.stix.x_elastic_isp; } if (ctx.stix.containsKey('x_elastic_threat_types')) { ctx.threat.indicator.threat_types = ctx.stix.x_elastic_threat_types; } if (ctx.stix.containsKey('pattern')) { ctx.threat.indicator.pattern = ctx.stix.pattern; } if (ctx.stix.containsKey('pattern_type')) { ctx.threat.indicator.pattern_type = ctx.stix.pattern_type; } if (ctx.stix.containsKey('pattern_version')) { ctx.threat.indicator.pattern_version = ctx.stix.pattern_version; } if (ctx.stix.containsKey('spec_version')) { ctx.threat.indicator.spec_version = ctx.stix.spec_version; } if (ctx.stix.containsKey('revoked')) { ctx.threat.indicator.revoked = ctx.stix.revoked; } }",
+        "if": "ctx.stix != null && ctx.data_stream?.dataset == 'ti_custom.indicator'"
+      }
+    }
+  ]
+}
+
+# 3. Check script on pipeline logs@custom
+GET _ingest/pipeline/logs@custom
+
+# 4. Test pipeline using a default doc from source index used by transform (.ds-logs-custom-ti....000[1...999]), paste doc from json inside []
+POST _ingest/pipeline/logs@custom/_simulate
+{
+  "docs": [
+    {
+      "_source": {
+        "data_stream": {
+          "dataset": "ti_custom.indicator"
+        },
+        "stix": {
+          "threat.indicator.provider": "abuseipdb-ioc-db-provider",
+          "threat.indicator.sightings": 1,
+          "threat.indicator.tags": ["web-attack", "exploit"],
+          "threat.indicator.geo": {
+            "city_name": "Phoenix",
+            "country_name": "United States"
+          }
+        },
+        "threat": {
+          "indicator": {
+            "type": "ipv4-addr"
+          }
+        }
+      }
+    }
+  ]
+}
+
+# 5. When you check in previous step all is good, start the transform, then check it
+GET logs-ti_custom.indicator*/_search
+{
+  "size": 1,
+  "query": {
+    "exists": {
+      "field": "threat.indicator.provider"
+    }
+  },
+  "_source": ["threat.indicator.provider", "threat.indicator.sightings", "threat.indicator.tags", "threat.indicator.geo"]
+}
