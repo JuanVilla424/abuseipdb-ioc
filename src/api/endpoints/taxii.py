@@ -128,7 +128,8 @@ async def get_collection_objects(
     collection_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    limit: int = Query(100, ge=1, le=10000, description="Maximum objects to return"),
+    limit: Optional[int] = Query(None, ge=1, description="Maximum objects to return"),
+    offset: int = Query(0, ge=0, description="Number of objects to skip"),
     added_after: Optional[str] = Query(None, description="Filter objects added after this date"),
     match_id: Optional[str] = Query(None, description="Filter by specific object ID"),
     match_type: Optional[str] = Query(None, description="Filter by object type"),
@@ -163,9 +164,14 @@ async def get_collection_objects(
             if cached_iocs:
                 logger.info(f"Using {len(cached_iocs)} pre-processed IOCs from cache")
 
-                # Apply limit for TAXII response
+                # Apply offset and limit for TAXII response
                 total_objects = len(cached_iocs)
-                paginated_objects = cached_iocs[:limit] if limit else cached_iocs
+                start_index = offset
+                if limit is None:
+                    end_index = len(cached_iocs)  # Return all remaining objects if no limit
+                else:
+                    end_index = start_index + limit
+                paginated_objects = cached_iocs[start_index:end_index]
 
                 # Create STIX bundle
                 try:
@@ -179,7 +185,7 @@ async def get_collection_objects(
 
                 # TAXII 2.1 envelope format (with objects at root level for Elasticsearch)
                 envelope = {
-                    "more": total_objects > limit if limit else False,
+                    "more": end_index < total_objects,
                     "data": bundle,
                     "objects": bundle.get(
                         "objects", []
