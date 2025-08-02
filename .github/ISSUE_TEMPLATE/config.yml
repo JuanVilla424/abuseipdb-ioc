@@ -1,11 +1,29 @@
 ---
-# .github/ISSUE_TEMPLATE/config.yml
+# 🎛️ GitHub Issue Template Configuration
+# This file configures the issue creation experience for AbuseIPDB IOC Enhancement Wrapper
 
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
-  - name: GitHub CICD Template Community Support
-    url: https://github.com/JuanVilla424/github-cicd-template/discussions
-    about: Please ask and answer questions here.
-  - name: GitHub CICD Template Security Reports
-    url: https://juanvilla424.github.io/github-cicd-template/SECURITY
-    about: Please report security vulnerabilities here.
+  - name: 💬 Community Discussions
+    url: https://github.com/JuanVilla424/abuseipdb-ioc/discussions
+    about: "Ask questions, share ideas, and connect with the community"
+
+  - name: 🔒 Private Security Reports
+    url: https://github.com/JuanVilla424/abuseipdb-ioc/security/advisories
+    about: "Report critical security vulnerabilities privately"
+
+  - name: 📚 Documentation & Wiki
+    url: https://juanvilla424.github.io/abuseipdb-ioc/
+    about: "Browse comprehensive documentation and guides"
+
+  - name: 🚀 Feature Roadmap
+    url: https://github.com/JuanVilla424/abuseipdb-ioc/projects
+    about: "View planned features and project progress"
+
+  - name: 🛡️ Threat Intelligence Help
+    url: https://github.com/JuanVilla424/abuseipdb-ioc/discussions/categories/q-a
+    about: "Get help with AbuseIPDB API setup and IOC processing issues"
+
+  - name: 💡 Ideas & Suggestions
+    url: https://github.com/JuanVilla424/abuseipdb-ioc/discussions/categories/ideas
+    about: "Share ideas for new threat intelligence features and improvements"
