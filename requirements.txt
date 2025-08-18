@@ -10,4 +10,4 @@ httpx==0.26.0
 stix2==3.0.1
 alembic==1.16.4
 python-multipart==0.0.20
-redis==5.0.1
+redis==6.4.0
